@@ -1,0 +1,4 @@
+http\HttpTestClient.class
+repository\ShowSeatRepositoryIntegrationTest.class
+http\ApiHttpSmokeTest.class
+service\BookingServiceTest.class

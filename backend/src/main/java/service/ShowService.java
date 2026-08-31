@@ -1,0 +1,198 @@
+package service;
+
+import dto.request.ShowRequest;
+import dto.response.ShowResponse;
+import exception.ConflictException;
+import exception.ForbiddenException;
+import exception.NotFoundException;
+import exception.ValidationException;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import model.Movie;
+import model.Screen;
+import model.Show;
+import model.Theatre;
+import repository.BookingRepository;
+import repository.MovieRepository;
+import repository.ScreenRepository;
+import repository.ShowRepository;
+import repository.TheatreRepository;
+import util.ShowTimes;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Singleton
+public class ShowService {
+
+    private final ShowRepository showRepository;
+    private final MovieRepository movieRepository;
+    private final ScreenRepository screenRepository;
+    private final TheatreRepository theatreRepository;
+    private final BookingRepository bookingRepository;
+
+    @Inject
+    public ShowService(
+            ShowRepository showRepository,
+            MovieRepository movieRepository,
+            ScreenRepository screenRepository,
+            TheatreRepository theatreRepository,
+            BookingRepository bookingRepository) {
+        this.showRepository = showRepository;
+        this.movieRepository = movieRepository;
+        this.screenRepository = screenRepository;
+        this.theatreRepository = theatreRepository;
+        this.bookingRepository = bookingRepository;
+    }
+
+    public Show createShow(ShowRequest request, Long adminId) {
+        validateRequest(request);
+
+        Movie movie = getMovie(request.getMovieId());
+        Screen screen = getScreen(request.getScreenId());
+        Theatre theatre = getTheatre(screen.getTheatreId());
+        verifyOwnership(theatre, adminId);
+
+        if (!request.getShowTiming().isAfter(LocalDateTime.now())) {
+            throw new ValidationException("Show timing must be in the future");
+        }
+
+        ensureNoOverlap(screen.getScreenId(), request.getShowTiming(), movie.getDurationInMinutes(), null);
+
+        Show show = new Show();
+        show.setMovieId(movie.getMovieId());
+        show.setScreenId(screen.getScreenId());
+        show.setShowTiming(request.getShowTiming());
+        return showRepository.save(show);
+    }
+
+    public void updateShow(Long showId, ShowRequest request, Long adminId) {
+        validateRequest(request);
+
+        Show show = getShow(showId);
+        Screen existingScreen = getScreen(show.getScreenId());
+        Theatre theatre = getTheatre(existingScreen.getTheatreId());
+        verifyOwnership(theatre, adminId);
+
+        if (bookingRepository.existsByShowId(showId)) {
+            throw new ConflictException("Cannot update a show that already has bookings");
+        }
+
+        Movie existingMovie = getMovie(show.getMovieId());
+        requireShowEnded(show, existingMovie);
+
+        Movie movie = getMovie(request.getMovieId());
+        Screen newScreen = getScreen(request.getScreenId());
+        Theatre newTheatre = getTheatre(newScreen.getTheatreId());
+        verifyOwnership(newTheatre, adminId);
+
+        ensureNoOverlap(newScreen.getScreenId(), request.getShowTiming(), movie.getDurationInMinutes(), showId);
+
+        show.setMovieId(movie.getMovieId());
+        show.setScreenId(newScreen.getScreenId());
+        show.setShowTiming(request.getShowTiming());
+        showRepository.update(show);
+    }
+
+    public void deleteShow(Long showId, Long adminId) {
+        Show show = getShow(showId);
+        Screen screen = getScreen(show.getScreenId());
+        Theatre theatre = getTheatre(screen.getTheatreId());
+        verifyOwnership(theatre, adminId);
+
+        Movie movie = getMovie(show.getMovieId());
+        requireShowEnded(show, movie);
+
+        if (bookingRepository.existsByShowId(showId)) {
+            throw new ConflictException("Cannot delete a show that still has bookings");
+        }
+        showRepository.deleteById(showId);
+    }
+
+    public List<ShowResponse> getShowsForMovie(Long movieId) {
+        getMovie(movieId);
+        return showRepository.findByMovieId(movieId).stream()
+                .map(this::toShowResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<ShowResponse> getShowsForScreen(Long screenId) {
+        getScreen(screenId);
+        return showRepository.findByScreenId(screenId).stream()
+                .map(this::toShowResponse)
+                .collect(Collectors.toList());
+    }
+
+    public ShowResponse toShowResponse(Show show) {
+        ShowResponse response = new ShowResponse();
+        response.setShowId(show.getShowId());
+        response.setMovieId(show.getMovieId());
+        response.setScreenId(show.getScreenId());
+        response.setShowTiming(show.getShowTiming());
+        return response;
+    }
+
+    private void requireShowEnded(Show show, Movie movie) {
+        if (!ShowTimes.hasEnded(show.getShowTiming(), movie.getDurationInMinutes(), LocalDateTime.now())) {
+            throw new ConflictException("Cannot update or delete a show until it has ended");
+        }
+    }
+
+    private void ensureNoOverlap(Long screenId, LocalDateTime start, int durationMinutes, Long ignoreShowId) {
+        for (Show existing : showRepository.findByScreenId(screenId)) {
+            if (ignoreShowId != null && existing.getShowId().equals(ignoreShowId)) {
+                continue;
+            }
+            Movie otherMovie = getMovie(existing.getMovieId());
+            if (ShowTimes.overlaps(
+                    start,
+                    durationMinutes,
+                    existing.getShowTiming(),
+                    otherMovie.getDurationInMinutes())) {
+                throw new ConflictException("Show timing overlaps another show on this screen");
+            }
+        }
+    }
+
+    private void validateRequest(ShowRequest request) {
+        if (request == null) {
+            throw new ValidationException("Show request cannot be null");
+        }
+        if (request.getMovieId() == null) {
+            throw new ValidationException("Movie ID cannot be null");
+        }
+        if (request.getScreenId() == null) {
+            throw new ValidationException("Screen ID cannot be null");
+        }
+        if (request.getShowTiming() == null) {
+            throw new ValidationException("Show timing cannot be null");
+        }
+    }
+
+    private Movie getMovie(Long movieId) {
+        return movieRepository.findById(movieId)
+                .orElseThrow(() -> new NotFoundException("Movie not found"));
+    }
+
+    private Screen getScreen(Long screenId) {
+        return screenRepository.findById(screenId)
+                .orElseThrow(() -> new NotFoundException("Screen not found"));
+    }
+
+    private Theatre getTheatre(Long theatreId) {
+        return theatreRepository.findById(theatreId)
+                .orElseThrow(() -> new NotFoundException("Theatre not found"));
+    }
+
+    private Show getShow(Long showId) {
+        return showRepository.findById(showId)
+                .orElseThrow(() -> new NotFoundException("Show not found"));
+    }
+
+    private void verifyOwnership(Theatre theatre, Long adminId) {
+        if (!theatre.getAdminId().equals(adminId)) {
+            throw new ForbiddenException("Admin does not own this theatre");
+        }
+    }
+}

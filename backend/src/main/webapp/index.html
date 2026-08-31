@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReelReserve</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="#">REEL<span>RESERVE</span></a>
+    <div class="account-actions">
+        <span id="user-label" class="user-label">Browsing as guest</span>
+        <button id="wallet-button" class="button button-quiet hidden" type="button">Wallet</button>
+        <button id="logout-button" class="button button-quiet hidden" type="button">Log out</button>
+    </div>
+</header>
+
+<main>
+    <section class="hero-band">
+        <div class="hero-copy">
+            <p class="kicker">Tonight's escape</p>
+            <h1>Find your next<br><em>great scene.</em></h1>
+            <p class="hero-note">Browse the catalogue, choose a show, and make the seats yours.</p>
+        </div>
+        <div class="hero-mark" aria-hidden="true">RR</div>
+    </section>
+
+    <section id="notice" class="notice hidden" role="status"></section>
+
+    <section id="account-panel" class="panel account-panel hidden">
+        <div class="account-panel-heading">
+            <div><p id="account-kind" class="kicker">Account</p><h2 id="account-name">Your wallet</h2><p id="account-email" class="account-email"></p></div>
+            <div class="wallet-total"><span>Available balance</span><strong id="wallet-balance">Rs 0</strong></div>
+        </div>
+        <div class="account-facts"><span>Role <strong id="account-role">CUSTOMER</strong></span><span id="wallet-help">Balance updates after every booking and cancellation</span><button id="refresh-wallet-button" class="button button-quiet" type="button">Refresh balance</button></div>
+    </section>
+
+    <section id="auth-panel" class="panel auth-panel">
+        <div class="panel-heading">
+            <p class="kicker">Your pass</p>
+            <h2>Sign in to book</h2>
+        </div>
+        <div class="auth-tabs" role="tablist">
+            <button class="tab active" data-auth-mode="login" type="button">Log in</button>
+            <button class="tab" data-auth-mode="register" type="button">Create account</button>
+        </div>
+        <form id="auth-form">
+            <label id="name-field" class="field hidden">Name<input id="name" type="text" autocomplete="name"></label>
+            <label class="field">Email<input id="email" type="email" required autocomplete="email"></label>
+            <label class="field">Password<input id="password" type="password" required minlength="6" autocomplete="current-password"></label>
+            <button class="button button-primary" type="submit"><span id="auth-submit-label">Log in</span><span aria-hidden="true">&#8594;</span></button>
+        </form>
+    </section>
+
+    <section id="catalogue" class="catalogue-section">
+        <div class="section-heading">
+            <div><p class="kicker">Now showing</p><h2>The catalogue</h2></div>
+            <button id="refresh-button" class="button button-quiet" type="button">Refresh</button>
+        </div>
+        <div id="movie-grid" class="movie-grid"><p class="loading">Loading films...</p></div>
+    </section>
+
+    <section id="details-panel" class="panel details-panel hidden">
+        <button id="close-details" class="close-button" type="button" aria-label="Close movie details">&#215;</button>
+        <div id="movie-details"></div>
+    </section>
+
+    <section id="admin-panel" class="admin-panel hidden">
+        <div class="section-heading admin-heading">
+            <div><p class="kicker">Admin studio</p><h2>Build the programme</h2></div>
+            <span class="role-badge">ADMIN</span>
+        </div>
+        <div class="admin-grid">
+            <section class="admin-column">
+                <div class="admin-column-heading"><h3>Theatres</h3><button id="new-theatre-button" class="button button-quiet" type="button">New</button></div>
+                <form id="theatre-form" class="admin-form hidden">
+                    <input id="theatre-id" type="hidden">
+                    <label class="field">Name<input id="theatre-name" required></label>
+                    <label class="field">Location<input id="theatre-location" required></label>
+                    <div class="form-actions"><button class="button button-primary" type="submit">Save theatre</button><button id="cancel-theatre" class="button button-quiet" type="button">Cancel</button></div>
+                </form>
+                <div id="theatre-list" class="admin-list"></div>
+            </section>
+            <section class="admin-column dependent-column">
+                <div class="admin-column-heading"><h3>Selected theatre screens</h3><button id="new-screen-button" class="button button-quiet" type="button" disabled>New</button></div>
+                <p id="screen-context" class="admin-context">Select a theatre first.</p>
+                <form id="screen-form" class="admin-form hidden">
+                    <input id="screen-id" type="hidden">
+                    <label class="field">Name<input id="screen-name" required></label>
+                    <label class="field">Rows<input id="screen-rows" placeholder="A-D" required></label>
+                    <label class="field">Seats per row<input id="screen-seats" type="number" min="1" required></label>
+                    <div class="form-actions"><button class="button button-primary" type="submit">Save screen</button><button id="cancel-screen" class="button button-quiet" type="button">Cancel</button></div>
+                </form>
+                <div id="screen-list" class="admin-list"></div>
+            </section>
+            <section class="admin-column dependent-column">
+                <div class="admin-column-heading"><h3>Shows</h3><button id="new-show-button" class="button button-quiet" type="button" disabled>New</button></div>
+                <p id="show-context" class="admin-context">Select a screen first.</p>
+                <form id="show-form" class="admin-form hidden">
+                    <input id="show-id" type="hidden">
+                    <label class="field">Movie<select id="show-movie" required></select></label>
+                    <label class="field">Start time<input id="show-time" type="datetime-local" required></label>
+                    <div class="form-actions"><button class="button button-primary" type="submit">Save show</button><button id="cancel-show" class="button button-quiet" type="button">Cancel</button></div>
+                </form>
+                <div id="show-list" class="admin-list"></div>
+            </section>
+        </div>
+    </section>
+
+    <section id="bookings-section" class="catalogue-section hidden">
+        <div class="section-heading"><div><p class="kicker">Your account</p><h2>My bookings</h2></div></div>
+        <div id="booking-list" class="booking-list"></div>
+    </section>
+</main>
+
+<footer><span>REELRESERVE</span><span>Movies, seats, memories.</span></footer>
+<script src="app.js"></script>
+</body>
+</html>
