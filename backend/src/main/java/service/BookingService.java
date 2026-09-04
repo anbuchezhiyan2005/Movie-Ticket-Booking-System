@@ -1,5 +1,7 @@
 package service;
 
+import cache.CachedShowSeats;
+import cache.SeatAvailabilityCache;
 import config.Database;
 import dto.request.BookingRequest;
 import dto.request.SeatRequest;
@@ -33,15 +35,23 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 @Singleton
 public class BookingService {
 
+    private static final Logger LOGGER = Logger.getLogger(BookingService.class.getName());
     private static final int PENDING_MINUTES = 5;
     private static final int FULL_REFUND_MINUTES_BEFORE_START = 30;
+    private static final long PAYMENT_DELAY_MILLIS = Long.getLong("booking.payment.delay.ms", 15_000L);
+    private final ConcurrentHashMap<String, Object> activeBookingLocks = new ConcurrentHashMap<>();
 
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
@@ -51,6 +61,8 @@ public class BookingService {
     private final TheatreRepository theatreRepository;
     private final ShowSeatRepository showSeatRepository;
     private final PaymentService paymentService;
+    private final SeatAvailabilityCache seatAvailabilityCache;
+    private final ConfirmationEmailService confirmationEmailService;
 
     @Inject
     public BookingService(
@@ -61,7 +73,9 @@ public class BookingService {
             ScreenRepository screenRepository,
             TheatreRepository theatreRepository,
             ShowSeatRepository showSeatRepository,
-            PaymentService paymentService) {
+            PaymentService paymentService,
+            SeatAvailabilityCache seatAvailabilityCache,
+            ConfirmationEmailService confirmationEmailService) {
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.showRepository = showRepository;
@@ -70,10 +84,44 @@ public class BookingService {
         this.theatreRepository = theatreRepository;
         this.showSeatRepository = showSeatRepository;
         this.paymentService = paymentService;
+        this.seatAvailabilityCache = seatAvailabilityCache;
+        this.confirmationEmailService = confirmationEmailService;
     }
 
     public BookingResponse bookTickets(Long customerId, BookingRequest request) throws SQLException {
-        return Database.inTransaction(() -> bookTicketsInternal(customerId, request));
+        validateBookingRequest(request);
+        List<String> lockKeys = bookingLockKeys(request);
+        Map<String, Object> acquiredLocks = new LinkedHashMap<>();
+
+        try {
+            for (String lockKey : lockKeys) {
+                Object lockToken = new Object();
+                if (activeBookingLocks.putIfAbsent(lockKey, lockToken) != null) {
+                    throw new ConflictException("One of the selected seats is currently being booked");
+                }
+                acquiredLocks.put(lockKey, lockToken);
+            }
+            BookingResult result = Database.inTransaction(() -> bookTicketsInternal(customerId, request));
+            try {
+                confirmationEmailService.queueConfirmation(result.confirmationEmail());
+            } catch (RuntimeException error) {
+                LOGGER.log(Level.SEVERE, "Unable to queue booking confirmation email for booking "
+                        + result.response().getBookingId(), error);
+            }
+            return result.response();
+        } finally {
+            acquiredLocks.forEach((lockKey, lockToken) -> activeBookingLocks.remove(lockKey, lockToken));
+        }
+    }
+
+    private List<String> bookingLockKeys(BookingRequest request) {
+        return request.getSeats().stream()
+                .map(seat -> request.getShowId() + ":"
+                        + (seat.getRowLabel() == null ? "" : seat.getRowLabel().trim().toUpperCase())
+                        + "-" + seat.getSeatNumber())
+                .distinct()
+                .sorted()
+                .toList();
     }
 
     public List<BookingResponse> getMyBookings(Long customerId) {
@@ -102,20 +150,48 @@ public class BookingService {
         Show show = getShow(showId);
         Screen screen = getScreen(show.getScreenId());
 
-        List<ShowSeat> occupiedSeats = showSeatRepository.findByShowId(showId);
-        Set<String> occupied = new HashSet<>();
-        for (ShowSeat seat : occupiedSeats) {
-            occupied.add(seat.getRowLabel() + "-" + seat.getSeatNumber());
+        // Try to get from cache first
+        CachedShowSeats cached = seatAvailabilityCache.get(showId);
+        java.util.Map<String, CachedShowSeats.SeatStatus> occupiedMap;
+
+        if (cached != null) {
+            // Cache hit: use cached occupancy
+            occupiedMap = cached.getOccupiedSeats();
+        } else {
+            // Cache miss: query DB and populate cache
+            java.util.Map<String, String> seatStatuses = showSeatRepository.findStatusByShowId(showId);
+            occupiedMap = new java.util.HashMap<>();
+            for (java.util.Map.Entry<String, String> entry : seatStatuses.entrySet()) {
+                CachedShowSeats.SeatStatus status = "PENDING".equals(entry.getValue())
+                        ? CachedShowSeats.SeatStatus.HELD
+                        : CachedShowSeats.SeatStatus.BOOKED;
+                occupiedMap.put(entry.getKey(), status);
+            }
+            cached = seatAvailabilityCache.put(showId, new CachedShowSeats(showId, occupiedMap));
+            occupiedMap = cached.getOccupiedSeats();
         }
 
+        // Generate seat grid
         List<SeatResponse> result = new ArrayList<>();
         List<String> rows = ShowTimes.generateRows(screen.getRowRange());
         for (String row : rows) {
             for (int seatNumber = 1; seatNumber <= screen.getSeatsPerRow(); seatNumber++) {
+                String seatKey = row + "-" + seatNumber;
                 SeatResponse seat = new SeatResponse();
                 seat.setRowLabel(row);
                 seat.setSeatNumber(seatNumber);
-                seat.setAvailable(!occupied.contains(row + "-" + seatNumber));
+
+                CachedShowSeats.SeatStatus status = occupiedMap.get(seatKey);
+                if (status == null) {
+                    seat.setAvailable(true);
+                    seat.setStatus("AVAILABLE");
+                } else if (status == CachedShowSeats.SeatStatus.HELD) {
+                    seat.setAvailable(false);
+                    seat.setStatus("HELD");
+                } else { // BOOKED
+                    seat.setAvailable(false);
+                    seat.setStatus("BOOKED");
+                }
                 result.add(seat);
             }
         }
@@ -126,16 +202,23 @@ public class BookingService {
         Database.inTransaction(() -> {
             List<Booking> expired = bookingRepository.findExpiredPending(LocalDateTime.now());
             for (Booking booking : expired) {
+                List<ShowSeat> expiredSeats = showSeatRepository.findByBookingId(booking.getBookingId());
                 showSeatRepository.deleteByBookingId(booking.getBookingId());
                 booking.setStatus(BookingStatus.EXPIRED);
                 booking.setExpiresAt(null);
                 bookingRepository.update(booking);
+
+                // Surgical cache update: remove expired seats
+                for (ShowSeat seat : expiredSeats) {
+                    String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+                    seatAvailabilityCache.removeSeat(booking.getShowId(), seatKey);
+                }
             }
             return null;
         });
     }
 
-    private BookingResponse bookTicketsInternal(Long customerId, BookingRequest request) {
+    private BookingResult bookTicketsInternal(Long customerId, BookingRequest request) {
         validateBookingRequest(request);
 
         User customer = getUser(customerId);
@@ -155,7 +238,12 @@ public class BookingService {
 
         Theatre theatre = getTheatre(screen.getTheatreId());
         Long adminId = theatre.getAdminId();
-        int totalAmount = movie.getTicketPrice() * request.getSeats().size();
+        final int totalAmount;
+        try {
+            totalAmount = Math.multiplyExact(movie.getTicketPrice(), request.getSeats().size());
+        } catch (ArithmeticException e) {
+            throw new ValidationException("Booking total is too large");
+        }
 
         LocalDateTime now = LocalDateTime.now();
         Booking booking = new Booking();
@@ -181,13 +269,57 @@ public class BookingService {
             }
         }
 
-        paymentService.processPayment(customerId, adminId, totalAmount);
+        for (SeatRequest seat : request.getSeats()) {
+            String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+            seatAvailabilityCache.addSeat(show.getShowId(), seatKey,
+                                         CachedShowSeats.SeatStatus.HELD);
+        }
+
+        try {
+            if (PAYMENT_DELAY_MILLIS > 0) {
+                Thread.sleep(PAYMENT_DELAY_MILLIS);
+            }
+            paymentService.processPayment(customerId, adminId, totalAmount);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            for (SeatRequest seat : request.getSeats()) {
+                String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+                seatAvailabilityCache.removeSeat(show.getShowId(), seatKey);
+            }
+            throw new IllegalStateException("Booking payment was interrupted", error);
+        } catch (RuntimeException error) {
+            for (SeatRequest seat : request.getSeats()) {
+                String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+                seatAvailabilityCache.removeSeat(show.getShowId(), seatKey);
+            }
+            throw error;
+        }
 
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setExpiresAt(null);
         bookingRepository.update(booking);
 
-        return toBookingResponse(booking, request.getSeats());
+        // Surgical cache update: mark seats as BOOKED
+        for (SeatRequest seat : request.getSeats()) {
+            String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+            seatAvailabilityCache.addSeat(show.getShowId(), seatKey, 
+                                         CachedShowSeats.SeatStatus.BOOKED);
+        }
+
+        BookingResponse response = toBookingResponse(booking, request.getSeats());
+        ConfirmationEmail confirmationEmail = new ConfirmationEmail(
+            customer.getEmail(),
+            customer.getName(),
+            booking.getBookingId(),
+            movie.getMovieName(),
+            theatre.getTheatreName(),
+            theatre.getTheatreLocation(),
+            show.getShowTiming(),
+            request.getSeats().stream()
+                .map(seat -> seat.getRowLabel() + "-" + seat.getSeatNumber())
+                .toList(),
+            booking.getTotalAmount());
+        return new BookingResult(response, confirmationEmail);
     }
 
     private void cancelInternal(Long bookingId, Long customerId) {
@@ -211,9 +343,16 @@ public class BookingService {
         int refundAmount = refundAmount(booking.getTotalAmount(), show.getShowTiming(), now);
         paymentService.refundPayment(customerId, theatre.getAdminId(), refundAmount);
 
+        List<ShowSeat> cancelledSeats = showSeatRepository.findByBookingId(bookingId);
         showSeatRepository.deleteByBookingId(bookingId);
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.update(booking);
+
+        // Surgical cache update: remove seats from cache
+        for (ShowSeat seat : cancelledSeats) {
+            String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
+            seatAvailabilityCache.removeSeat(booking.getShowId(), seatKey);
+        }
     }
 
     static int refundAmount(int total, LocalDateTime startTime, LocalDateTime now) {
@@ -328,5 +467,8 @@ public class BookingService {
         response.setSeatNumber(seat.getSeatNumber());
         response.setAvailable(false);
         return response;
+    }
+
+    private record BookingResult(BookingResponse response, ConfirmationEmail confirmationEmail) {
     }
 }

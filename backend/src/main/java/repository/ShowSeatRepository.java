@@ -8,7 +8,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /*
  * Repository class for handling database operations related to show seats.
@@ -52,6 +54,29 @@ public class ShowSeatRepository extends JdbcSupport {
                 ps.setLong(1, showId);
                 try (ResultSet rs = ps.executeQuery()) {
                     return mapList(rs);
+                }
+            }
+        });
+    }
+
+    // Retrieves claimed seats and distinguishes temporary holds from confirmed bookings.
+    public Map<String, String> findStatusByShowId(Long showId) {
+        return execute(connection -> {
+            String sql = """
+                    SELECT ss.row_label, ss.seat_number, b.status
+                    FROM show_seats ss
+                    JOIN bookings b ON b.booking_id = ss.booking_id
+                    WHERE ss.show_id = ?
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, showId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    Map<String, String> statuses = new HashMap<>();
+                    while (rs.next()) {
+                        String key = rs.getString("row_label") + "-" + rs.getInt("seat_number");
+                        statuses.put(key, rs.getString("status"));
+                    }
+                    return statuses;
                 }
             }
         });

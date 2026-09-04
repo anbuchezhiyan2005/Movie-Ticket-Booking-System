@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cross-Origin Iframe Embedding Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+        }
+
+        .test-banner {
+            background-color: #d9534f;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        /* Fully visible iframe with clear border styling */
+        .embedded-app-frame {
+            width: 100%;
+            height: 700px;
+            border: 3px solid #0275d8;
+            border-radius: 8px;
+            background-color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="test-banner">
+        <h2>⚠️ External Host Site (Simulated Cross-Origin Page)</h2>
+        <p>The box below attempts to load your actual Movie Booking application inside an <code>&lt;iframe&gt;</code>.</p>
+    </div>
+
+    <!-- Replace the src URL with your actual Tomcat deployment path -->
+    <iframe class="embedded-app-frame" 
+            src="http://localhost:8080/movie-booking/">
+    </iframe>
+
+</body>
+</html>

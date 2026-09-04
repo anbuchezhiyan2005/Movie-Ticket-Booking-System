@@ -34,15 +34,27 @@ public final class Database {
             throw new IllegalStateException("Could not load db.properties", e);
         }
 
-        url = properties.getProperty("db.url");
-        user = properties.getProperty("db.user");
-        password = properties.getProperty("db.password");
+        url = firstConfigured("DB_URL", "db.url", properties.getProperty("db.url"));
+        user = firstConfigured("DB_USER", "db.user", properties.getProperty("db.user"));
+        password = firstConfigured("DB_PASSWORD", "db.password", properties.getProperty("db.password"));
+
+        if (!url.contains("useUnicode=true") && !url.contains("characterEncoding=")) {
+            url = url + (url.contains("?") ? "&" : "?") + "useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci";
+        }
 
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("MySQL driver not found", e);
         }
+    }
+
+    private static String firstConfigured(String environmentName, String systemPropertyName, String fileValue) {
+        String configuredValue = EnvironmentConfig.get(environmentName);
+        if (configuredValue != null) {
+            return configuredValue;
+        }
+        return EnvironmentConfig.get(systemPropertyName, fileValue);
     }
 
     // Opens a new database connection

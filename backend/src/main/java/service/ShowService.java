@@ -75,12 +75,13 @@ public class ShowService {
         Theatre theatre = getTheatre(existingScreen.getTheatreId());
         verifyOwnership(theatre, adminId);
 
-        if (bookingRepository.existsByShowId(showId)) {
-            throw new ConflictException("Cannot update a show that already has bookings");
+        if (bookingRepository.existsConfirmedBookingForShow(showId)) {
+            throw new ConflictException("Cannot update a show with confirmed bookings");
         }
 
-        Movie existingMovie = getMovie(show.getMovieId());
-        requireShowEnded(show, existingMovie);
+        if (ShowTimes.hasStarted(show.getShowTiming(), LocalDateTime.now())) {
+            throw new ConflictException("Cannot update a show that has already started");
+        }
 
         Movie movie = getMovie(request.getMovieId());
         Screen newScreen = getScreen(request.getScreenId());
@@ -96,18 +97,7 @@ public class ShowService {
     }
 
     public void deleteShow(Long showId, Long adminId) {
-        Show show = getShow(showId);
-        Screen screen = getScreen(show.getScreenId());
-        Theatre theatre = getTheatre(screen.getTheatreId());
-        verifyOwnership(theatre, adminId);
-
-        Movie movie = getMovie(show.getMovieId());
-        requireShowEnded(show, movie);
-
-        if (bookingRepository.existsByShowId(showId)) {
-            throw new ConflictException("Cannot delete a show that still has bookings");
-        }
-        showRepository.deleteById(showId);
+        throw new ConflictException("Show deletion is temporarily disabled");
     }
 
     public List<ShowResponse> getShowsForMovie(Long movieId) {
@@ -124,6 +114,33 @@ public class ShowService {
                 .collect(Collectors.toList());
     }
 
+    public List<ShowResponse> getShowsForTheatre(Long theatreId, Long adminId) {
+        Theatre theatre = getTheatre(theatreId);
+        verifyOwnership(theatre, adminId);
+
+        return screenRepository.findByTheatreId(theatreId).stream()
+                .flatMap(screen -> showRepository.findByScreenId(screen.getScreenId()).stream())
+                .filter(this::hasNotEnded)
+                .map(this::toShowResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<ShowResponse> getShowsForScreen(Long screenId, Long adminId) {
+        Screen screen = getScreen(screenId);
+        Theatre theatre = getTheatre(screen.getTheatreId());
+        verifyOwnership(theatre, adminId);
+
+        return showRepository.findByScreenId(screenId).stream()
+                .filter(this::hasNotEnded)
+                .map(this::toShowResponse)
+                .collect(Collectors.toList());
+    }
+
+    private boolean hasNotEnded(Show show) {
+        Movie movie = getMovie(show.getMovieId());
+        return !ShowTimes.hasEnded(show.getShowTiming(), movie.getDurationInMinutes(), LocalDateTime.now());
+    }
+
     public ShowResponse toShowResponse(Show show) {
         ShowResponse response = new ShowResponse();
         response.setShowId(show.getShowId());
@@ -131,12 +148,6 @@ public class ShowService {
         response.setScreenId(show.getScreenId());
         response.setShowTiming(show.getShowTiming());
         return response;
-    }
-
-    private void requireShowEnded(Show show, Movie movie) {
-        if (!ShowTimes.hasEnded(show.getShowTiming(), movie.getDurationInMinutes(), LocalDateTime.now())) {
-            throw new ConflictException("Cannot update or delete a show until it has ended");
-        }
     }
 
     private void ensureNoOverlap(Long screenId, LocalDateTime start, int durationMinutes, Long ignoreShowId) {

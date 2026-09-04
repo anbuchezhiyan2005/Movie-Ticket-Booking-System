@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cross-site iframe test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 24px;
+      background: #f5f5f5;
+    }
+    h1 { margin-bottom: 12px; }
+    iframe {
+      width: 100%;
+      height: 700px;
+      border: 2px solid #d33;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>External page embedding the app</h1>
+  <p>This is a temporary cross-site test page. If the app is blocking iframe embedding, the frame will not display the application.</p>
+
+  <iframe src="http://localhost:8080/movie-booking/" title="Embedded app"></iframe>
+</body>
+</html>

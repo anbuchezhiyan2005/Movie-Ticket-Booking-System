@@ -4,6 +4,7 @@ import config.Database;
 import dto.request.BookingRequest;
 import dto.request.SeatRequest;
 import enums.BookingStatus;
+import exception.ConflictException;
 import exception.ValidationException;
 import model.ShowSeat;
 import org.junit.jupiter.api.AfterAll;
@@ -21,11 +22,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShowSeatRepositoryIntegrationTest {
@@ -106,6 +112,61 @@ class ShowSeatRepositoryIntegrationTest {
         }
     }
 
+    @Test
+    void onlyOneBookingServiceRequestAcquiresTheSameSeatLock() throws Exception {
+        setWalletBalance(customerId, 1000);
+        setWalletBalance(adminId, 0);
+
+        BookingRequest request = new BookingRequest();
+        request.setShowId(showId);
+        SeatRequest requestedSeat = new SeatRequest();
+        requestedSeat.setRowLabel("B");
+        requestedSeat.setSeatNumber(5);
+        request.setSeats(List.of(requestedSeat));
+
+        BookingService bookingService = createBookingService();
+        CyclicBarrier startTogether = new CyclicBarrier(2);
+        AtomicReference<Long> winningBookingId = new AtomicReference<>();
+        List<Long> durations = new CopyOnWriteArrayList<>();
+        Callable<Boolean> attempt = () -> {
+            startTogether.await(10, TimeUnit.SECONDS);
+            long startedAt = System.nanoTime();
+            try {
+                Long createdBookingId = bookingService.bookTickets(customerId, request).getBookingId();
+                winningBookingId.set(createdBookingId);
+                return true;
+            } catch (ConflictException expected) {
+                return false;
+            } finally {
+                durations.add(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
+            }
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Boolean>> results = executor.invokeAll(List.of(attempt, attempt));
+            int successfulBookings = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get()) {
+                    successfulBookings++;
+                }
+            }
+
+            assertEquals(1, successfulBookings);
+            assertEquals(1, countClaimedSeatsForRow("B", 5));
+            assertNotNull(winningBookingId.get());
+            assertTrue(durations.stream().anyMatch(duration -> duration < 5000),
+                    "The rejected request should fail before payment delay completes");
+        } finally {
+            executor.shutdownNow();
+            if (winningBookingId.get() != null) {
+                bookingService.cancelBooking(winningBookingId.get(), customerId);
+            }
+        }
+
+        assertEquals(0, countClaimedSeatsForRow("B", 5));
+    }
+
         @Test
         void insufficientBalanceRollsBackBookingAndSeatClaim() throws Exception {
             setWalletBalance(customerId, 0);
@@ -125,7 +186,10 @@ class ShowSeatRepositoryIntegrationTest {
             new ScreenRepository(),
             new TheatreRepository(),
             new ShowSeatRepository(),
-            new PaymentService(new UserRepository()));
+            new PaymentService(new UserRepository()),
+            new cache.SeatAvailabilityCache(),
+            confirmation -> {
+            });
 
         org.junit.jupiter.api.Assertions.assertThrows(
             ValidationException.class,
@@ -323,7 +387,10 @@ class ShowSeatRepositoryIntegrationTest {
                 new ScreenRepository(),
                 new TheatreRepository(),
                 new ShowSeatRepository(),
-                new PaymentService(new UserRepository()));
+                new PaymentService(new UserRepository()),
+                new cache.SeatAvailabilityCache(),
+                confirmation -> {
+                });
     }
 
     private static int countClaimedSeats() throws SQLException {

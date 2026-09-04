@@ -15,6 +15,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import model.User;
 import service.AuthService;
+import util.RequestUsers;
 
 /*
  * REST resource handling authentication endpoints (register, login, logout, and current user info).
@@ -34,10 +35,23 @@ public class AuthResource {
     // Registers a new user
     @POST
     @Path("/register")
-    public Response register(RegisterRequest request) {
+    public Response register(RegisterRequest request, @Context HttpServletRequest httpRequest) {
         User user = authService.register(request);
+        AuthResponse response = authService.toAuthResponse(user);
+        response.setCsrfToken(RequestUsers.issueCsrfToken(httpRequest));
         return Response.status(Response.Status.CREATED)
-                .entity(authService.toAuthResponse(user))
+                .entity(response)
+                .build();
+    }
+
+    @POST
+    @Path("/register-admin")
+    public Response registerAdmin(RegisterRequest request, @Context HttpServletRequest httpRequest) {
+        User user = authService.registerAdmin(request);
+        AuthResponse response = authService.toAuthResponse(user);
+        response.setCsrfToken(RequestUsers.issueCsrfToken(httpRequest));
+        return Response.status(Response.Status.CREATED)
+                .entity(response)
                 .build();
     }
 
@@ -47,7 +61,9 @@ public class AuthResource {
     public AuthResponse login(LoginRequest request, @Context HttpServletRequest httpRequest) {
         User user = authService.login(request);
         RequestUsers.login(httpRequest, user.getId(), user.getRole());
-        return authService.toAuthResponse(user);
+        AuthResponse authResponse = authService.toAuthResponse(user);
+        authResponse.setCsrfToken(RequestUsers.requireCsrfToken(httpRequest));
+        return authResponse;
     }
 
     // Logs out the current user by invalidating their session
@@ -63,6 +79,8 @@ public class AuthResource {
     @Path("/me")
     public AuthResponse me(@Context HttpServletRequest httpRequest) {
         Long userId = RequestUsers.requireUserId(httpRequest);
-        return authService.toAuthResponse(authService.getById(userId));
+        AuthResponse authResponse = authService.toAuthResponse(authService.getById(userId));
+        authResponse.setCsrfToken(RequestUsers.requireCsrfToken(httpRequest));
+        return authResponse;
     }
 }

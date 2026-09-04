@@ -9,6 +9,7 @@ public class RegisterRequest {
     private String email;
     private String password;
     private String role;
+    private String adminKey;
 
     public String getName() {
         return name;
@@ -40,5 +41,13 @@ public class RegisterRequest {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getAdminKey() {
+        return adminKey;
+    }
+
+    public void setAdminKey(String adminKey) {
+        this.adminKey = adminKey;
     }
 }

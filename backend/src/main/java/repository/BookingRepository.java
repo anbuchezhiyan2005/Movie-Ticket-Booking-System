@@ -122,6 +122,30 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
+    public boolean existsActiveBookingForShow(Long showId) {
+        return execute(connection -> {
+            String sql = "SELECT 1 FROM bookings WHERE show_id = ? AND status NOT IN ('CANCELLED', 'EXPIRED') LIMIT 1";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, showId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        });
+    }
+
+    public boolean existsConfirmedBookingForShow(Long showId) {
+        return execute(connection -> {
+            String sql = "SELECT 1 FROM bookings WHERE show_id = ? AND status = 'CONFIRMED' LIMIT 1";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, showId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        });
+    }
+
     public boolean existsByScreenId(Long screenId) {
         return execute(connection -> {
             String sql = """
@@ -145,6 +169,23 @@ public class BookingRepository extends JdbcSupport {
                     JOIN shows s ON s.show_id = b.show_id
                     JOIN screens sc ON sc.screen_id = s.screen_id
                     WHERE sc.theatre_id = ? LIMIT 1
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, theatreId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        });
+    }
+
+    public boolean existsConfirmedBookingForTheatre(Long theatreId) {
+        return execute(connection -> {
+            String sql = """
+                    SELECT 1 FROM bookings b
+                    JOIN shows s ON s.show_id = b.show_id
+                    JOIN screens sc ON sc.screen_id = s.screen_id
+                    WHERE sc.theatre_id = ? AND b.status = 'CONFIRMED' LIMIT 1
                     """;
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setLong(1, theatreId);

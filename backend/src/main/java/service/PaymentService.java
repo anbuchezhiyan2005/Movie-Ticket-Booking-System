@@ -23,12 +23,11 @@ public class PaymentService {
         User customer = getUser(customerId);
         User admin = getUser(adminId);
 
-        if (customer.getWalletBalance() < amount) {
+        if (!userRepository.debitWalletBalance(customerId, amount)) {
             throw new ValidationException("Insufficient wallet balance");
         }
 
-        userRepository.updateWalletBalance(customerId, customer.getWalletBalance() - amount);
-        userRepository.updateWalletBalance(adminId, admin.getWalletBalance() + amount);
+        userRepository.creditWalletBalance(adminId, amount);
     }
 
     public void refundPayment(Long customerId, Long adminId, int refundAmount) {
@@ -42,12 +41,11 @@ public class PaymentService {
         User customer = getUser(customerId);
         User admin = getUser(adminId);
 
-        if (admin.getWalletBalance() < refundAmount) {
+        if (!userRepository.debitWalletBalance(adminId, refundAmount)) {
             throw new ValidationException("Admin wallet has insufficient balance for refund");
         }
 
-        userRepository.updateWalletBalance(customerId, customer.getWalletBalance() + refundAmount);
-        userRepository.updateWalletBalance(adminId, admin.getWalletBalance() - refundAmount);
+        userRepository.creditWalletBalance(customerId, refundAmount);
     }
 
     private User getUser(Long userId) {

@@ -28,30 +28,24 @@ public class AuthService {
     }
 
     public User register(RegisterRequest request) {
+        request.setRole("CUSTOMER");
         validateRegister(request);
+        return registerUser(request, Role.CUSTOMER);
+    }
 
-        Role role;
-        try {
-            role = Role.valueOf(request.getRole().trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ValidationException("Role must be CUSTOMER or ADMIN");
+    public User registerAdmin(RegisterRequest request) {
+        request.setRole("ADMIN");
+        validateRegister(request);
+        if (isBlank(request.getAdminKey())) {
+            throw new ValidationException("Admin access code is required");
         }
 
-        if (role != Role.CUSTOMER) {
-            throw new ValidationException("Public registration is only available for customers");
+        String configuredSecret = System.getProperty("movie.booking.admin.secret", "REELRESERVE-ADMIN-KEY");
+        if (!configuredSecret.equals(request.getAdminKey().trim())) {
+            throw new ValidationException("Invalid admin access code");
         }
 
-        if (userRepository.findByEmail(request.getEmail().trim()).isPresent()) {
-            throw new ConflictException("Email is already registered");
-        }
-
-        User user = new User();
-        user.setName(request.getName().trim());
-        user.setEmail(request.getEmail().trim().toLowerCase());
-        user.setPasswordHash(PasswordHasher.hash(request.getPassword()));
-        user.setRole(role);
-        user.setWalletBalance(role == Role.CUSTOMER ? CUSTOMER_STARTING_BALANCE : ADMIN_STARTING_BALANCE);
-        return userRepository.save(user);
+        return registerUser(request, Role.ADMIN);
     }
 
     public User login(LoginRequest request) {
@@ -81,6 +75,29 @@ public class AuthService {
         response.setRole(user.getRole());
         response.setWalletBalance(user.getWalletBalance());
         return response;
+    }
+
+    private User registerUser(RegisterRequest request, Role role) {
+        try {
+            Role parsedRole = Role.valueOf(request.getRole().trim().toUpperCase());
+            if (parsedRole != role) {
+                throw new ValidationException("Role mismatch");
+            }
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("Role must be CUSTOMER or ADMIN");
+        }
+
+        if (userRepository.findByEmail(request.getEmail().trim()).isPresent()) {
+            throw new ConflictException("Email is already registered");
+        }
+
+        User user = new User();
+        user.setName(request.getName().trim());
+        user.setEmail(request.getEmail().trim().toLowerCase());
+        user.setPasswordHash(PasswordHasher.hash(request.getPassword()));
+        user.setRole(role);
+        user.setWalletBalance(role == Role.CUSTOMER ? CUSTOMER_STARTING_BALANCE : ADMIN_STARTING_BALANCE);
+        return userRepository.save(user);
     }
 
     private void validateRegister(RegisterRequest request) {

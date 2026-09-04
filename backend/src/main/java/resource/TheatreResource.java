@@ -17,6 +17,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import model.Theatre;
 import service.TheatreService;
+import util.RequestUsers;
 
 import java.util.List;
 

@@ -59,10 +59,9 @@ public class TheatreService {
     public void updateTheatre(Long theatreId, TheatreRequest request, Long adminId) {
         validateRequest(request);
         Theatre theatre = getOwnedTheatre(theatreId, adminId);
-        if (bookingRepository.existsByTheatreId(theatreId)) {
-            throw new ConflictException("Cannot update a theatre that has bookings");
+        if (bookingRepository.existsConfirmedBookingForTheatre(theatreId)) {
+            throw new ConflictException("Cannot update a theatre with confirmed bookings");
         }
-        requireNoUnfinishedShows(theatreId);
 
         theatre.setTheatreName(request.getTheatreName().trim());
         theatre.setTheatreLocation(request.getTheatreLocation().trim());

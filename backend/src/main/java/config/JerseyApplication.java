@@ -1,5 +1,6 @@
 package config;
 
+import cache.SeatAvailabilityCache;
 import org.glassfish.jersey.jackson.JacksonFeature;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.internal.inject.AbstractBinder;
@@ -15,10 +16,12 @@ import repository.UserRepository;
 import service.AuthService;
 import service.BookingExpiryScheduler;
 import service.BookingService;
+import service.ConfirmationEmailService;
 import service.MovieService;
 import service.PaymentService;
 import service.ScreenService;
 import service.ShowService;
+import service.SmtpConfirmationEmailService;
 import service.TheatreService;
 
 /*
@@ -29,9 +32,15 @@ import service.TheatreService;
 
 
 public class JerseyApplication extends ResourceConfig {
+    private SeatAvailabilityCache seatAvailabilityCache;
+
     public JerseyApplication() {
         packages("resource", "exception");
         register(JacksonFeature.class);
+
+        // Create and start cache cleanup scheduler
+        seatAvailabilityCache = new SeatAvailabilityCache();
+        seatAvailabilityCache.startCleanupScheduler();
 
         register(new AbstractBinder() {
             @Override
@@ -51,7 +60,11 @@ public class JerseyApplication extends ResourceConfig {
                 bindAsContract(ShowService.class);
                 bindAsContract(BookingService.class);
                 bindAsContract(PaymentService.class);
+                bindAsContract(SmtpConfirmationEmailService.class).to(ConfirmationEmailService.class);
                 bindAsContract(BookingExpiryScheduler.class);
+
+                // Register cache singleton
+                bind(seatAvailabilityCache).to(SeatAvailabilityCache.class);
             }
         });
 

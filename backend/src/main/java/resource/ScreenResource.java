@@ -17,6 +17,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import model.Screen;
 import service.ScreenService;
+import util.RequestUsers;
 
 import java.util.List;
 

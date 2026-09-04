@@ -85,6 +85,32 @@ public class UserRepository extends JdbcSupport {
         });
     }
 
+    public boolean debitWalletBalance(Long userId, int amount) {
+        return execute(connection -> {
+            String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setInt(1, amount);
+                ps.setLong(2, userId);
+                ps.setInt(3, amount);
+                return ps.executeUpdate() == 1;
+            }
+        });
+    }
+
+    public void creditWalletBalance(Long userId, int amount) {
+        execute(connection -> {
+            String sql = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setInt(1, amount);
+                ps.setLong(2, userId);
+                if (ps.executeUpdate() != 1) {
+                    throw new IllegalStateException("User not found");
+                }
+                return null;
+            }
+        });
+    }
+
     // Helper method to map a database result set row to a User object
     private User map(ResultSet rs) throws SQLException {
         User user = new User();

@@ -12,6 +12,7 @@ public class AuthResponse {
     private String email;
     private Role role;
     private int walletBalance;
+    private String csrfToken;
 
     public Long getUserId() {
         return userId;
@@ -51,5 +52,13 @@ public class AuthResponse {
 
     public void setWalletBalance(int walletBalance) {
         this.walletBalance = walletBalance;
+    }
+
+    public String getCsrfToken() {
+        return csrfToken;
+    }
+
+    public void setCsrfToken(String csrfToken) {
+        this.csrfToken = csrfToken;
     }
 }

@@ -45,10 +45,15 @@
             <button class="tab active" data-auth-mode="login" type="button">Log in</button>
             <button class="tab" data-auth-mode="register" type="button">Create account</button>
         </div>
+        <div id="registration-role" class="auth-tabs hidden" role="tablist" aria-label="Account type">
+            <button class="tab active" data-register-role="CUSTOMER" type="button">Customer</button>
+            <button class="tab" data-register-role="ADMIN" type="button">Admin</button>
+        </div>
         <form id="auth-form">
             <label id="name-field" class="field hidden">Name<input id="name" type="text" autocomplete="name"></label>
             <label class="field">Email<input id="email" type="email" required autocomplete="email"></label>
             <label class="field">Password<input id="password" type="password" required minlength="6" autocomplete="current-password"></label>
+            <label id="admin-key-field" class="field hidden">Admin access code<input id="admin-key" type="password" autocomplete="off"></label>
             <button class="button button-primary" type="submit"><span id="auth-submit-label">Log in</span><span aria-hidden="true">&#8594;</span></button>
         </form>
     </section>

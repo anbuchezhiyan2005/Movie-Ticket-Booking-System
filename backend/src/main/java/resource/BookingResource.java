@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import service.BookingService;
+import util.RequestUsers;
 
 import java.sql.SQLException;
 import java.util.List;

@@ -8,6 +8,7 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import util.RequestUsers;
 import enums.Role;
 
 import java.io.IOException;
@@ -26,10 +27,16 @@ public class AuthFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
+        request.setCharacterEncoding("UTF-8");
+        response.setCharacterEncoding("UTF-8");
+
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        // Skip authentication check for OPTIONS requests (CORS preflight) or public endpoints
+        httpResponse.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+        httpResponse.setHeader("X-Frame-Options", "DENY");
+
+        // Skip authentication check for OPTIONS requests or public endpoints
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod()) || isPublic(httpRequest)) {
             chain.doFilter(request, response);
             return;
@@ -44,6 +51,17 @@ public class AuthFilter implements Filter {
             httpResponse.setContentType("application/json");
             httpResponse.getWriter().write("{\"error\":\"Not authenticated\"}");
             return;
+        }
+
+        if (isStateChangingRequest(httpRequest)) {
+            String expectedToken = RequestUsers.requireCsrfToken(httpRequest);
+            String suppliedToken = httpRequest.getHeader("X-CSRF-Token");
+            if (expectedToken == null || suppliedToken == null || !expectedToken.equals(suppliedToken)) {
+                httpResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                httpResponse.setContentType("application/json");
+                httpResponse.getWriter().write("{\"error\":\"Invalid CSRF token\"}");
+                return;
+            }
         }
 
         // Attach user info to the request attributes so downstream resources/controllers can access them easily
@@ -61,26 +79,35 @@ public class AuthFilter implements Filter {
         }
     }
 
+    private boolean isStateChangingRequest(HttpServletRequest request) {
+        String method = request.getMethod();
+        return "POST".equalsIgnoreCase(method)
+                || "PUT".equalsIgnoreCase(method)
+                || "PATCH".equalsIgnoreCase(method)
+                || "DELETE".equalsIgnoreCase(method);
+    }
+
     /*
      * Checks if the requested endpoint is public (does not require authentication).
+     * This is intentionally tolerant of root and static-resource requests because the filter
+     * now wraps every URL pattern and has to protect the HTML shell as well as the API.
      */
     private boolean isPublic(HttpServletRequest request) {
-        String path = request.getPathInfo();
-        if (path == null) {
-            path = "";
-        }
+        String path = resolveRequestPath(request);
         String method = request.getMethod();
 
-        // Health check is always public
-        if ("GET".equalsIgnoreCase(method) && "/health".equals(path)) {
-            return true;
-        }
-        // Register and login endpoints are public
-        if ("POST".equalsIgnoreCase(method) && ("/auth/register".equals(path) || "/auth/login".equals(path))) {
-            return true;
-        }
-        // General GET endpoints for movies, shows, and screens are public
         if ("GET".equalsIgnoreCase(method)) {
+            if (path.isEmpty() || "/".equals(path) || "/index.html".equals(path)) {
+                return true;
+            }
+            if (path.endsWith(".js") || path.endsWith(".css") || path.endsWith(".html")
+                    || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg")
+                    || path.endsWith(".svg") || path.endsWith(".ico")) {
+                return true;
+            }
+            if ("/health".equals(path)) {
+                return true;
+            }
             if ("/movies".equals(path) || path.matches("/movies/\\d+") || path.matches("/movies/\\d+/theatres")) {
                 return true;
             }
@@ -88,6 +115,31 @@ public class AuthFilter implements Filter {
                 return true;
             }
         }
+
+        if ("POST".equalsIgnoreCase(method) && ("/auth/register".equals(path) || "/auth/register-admin".equals(path) || "/auth/login".equals(path))) {
+            return true;
+        }
+
         return false;
+    }
+
+    private String resolveRequestPath(HttpServletRequest request) {
+        String path = request.getPathInfo();
+        if (path == null || path.isBlank()) {
+            path = request.getServletPath();
+        }
+        if (path == null || path.isBlank()) {
+            String requestUri = request.getRequestURI();
+            String contextPath = request.getContextPath();
+            if (requestUri != null && contextPath != null && !contextPath.isBlank()) {
+                requestUri = requestUri.substring(contextPath.length());
+            }
+            if (requestUri == null || requestUri.isBlank() || "/".equals(requestUri)) {
+                path = "/";
+            } else {
+                path = requestUri;
+            }
+        }
+        return path == null ? "" : path;
     }
 }

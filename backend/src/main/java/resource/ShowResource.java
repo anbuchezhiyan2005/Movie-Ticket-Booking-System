@@ -20,6 +20,7 @@ import jakarta.ws.rs.core.Response;
 import model.Show;
 import service.BookingService;
 import service.ShowService;
+import util.RequestUsers;
 
 import java.util.List;
 
@@ -37,6 +38,7 @@ public class ShowResource {
         this.bookingService = bookingService;
     }
 
+    // Customer-facing endpoints
     @GET
     @Path("/shows")
     public List<ShowResponse> byMovie(@QueryParam("movieId") Long movieId) {
@@ -53,11 +55,26 @@ public class ShowResource {
     }
 
     @GET
+    @Path("/theatres/{theatreId}/shows")
+    public List<ShowResponse> byTheatre(@PathParam("theatreId") Long theatreId, @Context HttpServletRequest request) {
+        Long adminId = RequestUsers.requireAdmin(request);
+        return showService.getShowsForTheatre(theatreId, adminId);
+    }
+
+    @GET
+    @Path("/admin/screens/{screenId}/shows")
+    public List<ShowResponse> adminByScreen(@PathParam("screenId") Long screenId, @Context HttpServletRequest request) {
+        Long adminId = RequestUsers.requireAdmin(request);
+        return showService.getShowsForScreen(screenId, adminId);
+    }
+
+    @GET
     @Path("/shows/{id}/seats")
     public List<SeatResponse> seats(@PathParam("id") Long showId) {
         return bookingService.getAvailableSeats(showId);
     }
 
+    // Admin-facing endpoints
     @POST
     @Path("/shows")
     public Response create(ShowRequest body, @Context HttpServletRequest request) {
