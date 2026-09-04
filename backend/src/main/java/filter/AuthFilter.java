@@ -36,6 +36,11 @@ public class AuthFilter implements Filter {
         httpResponse.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
         httpResponse.setHeader("X-Frame-Options", "DENY");
 
+        if (isScannerRequest(httpRequest)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         // Skip authentication check for OPTIONS requests or public endpoints
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod()) || isPublic(httpRequest)) {
             chain.doFilter(request, response);
@@ -116,11 +121,24 @@ public class AuthFilter implements Filter {
             }
         }
 
-        if ("POST".equalsIgnoreCase(method) && ("/auth/register".equals(path) || "/auth/register-admin".equals(path) || "/auth/login".equals(path))) {
+        if ("POST".equalsIgnoreCase(method) && ("/auth/register".equals(path) || "/auth/register-admin".equals(path) || "/auth/login".equals(path)
+            || isScannerRedeemPath(request, path))) {
             return true;
         }
 
         return false;
+    }
+
+    private boolean isScannerRedeemPath(HttpServletRequest request, String path) {
+        return "/scanner/tickets/redeem".equals(path)
+                || "/api/scanner/tickets/redeem".equals(path)
+                || (request.getRequestURI() != null
+                && request.getRequestURI().contains("/scanner/tickets/redeem"));
+    }
+
+    private boolean isScannerRequest(HttpServletRequest request) {
+        return "POST".equalsIgnoreCase(request.getMethod())
+                && request.getHeader("X-Scanner-API-Key") != null;
     }
 
     private String resolveRequestPath(HttpServletRequest request) {

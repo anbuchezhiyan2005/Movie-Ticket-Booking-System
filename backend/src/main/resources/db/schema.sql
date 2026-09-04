@@ -93,8 +93,25 @@ CREATE TABLE show_seats (
         FOREIGN KEY (booking_id) REFERENCES bookings (booking_id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE booking_gate_tokens (
+    id                 BIGINT       NOT NULL AUTO_INCREMENT,
+    booking_id         BIGINT       NOT NULL,
+    token_hash         CHAR(64)     NOT NULL,
+    status             VARCHAR(10)  NOT NULL DEFAULT 'ISSUED',
+    expires_at         DATETIME     NOT NULL,
+    scanned_at         DATETIME     NULL,
+    scanned_by_device  VARCHAR(100) NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_booking_gate_token_hash (token_hash),
+    CONSTRAINT fk_gate_tokens_booking
+        FOREIGN KEY (booking_id) REFERENCES bookings (booking_id) ON DELETE CASCADE,
+    CONSTRAINT chk_booking_gate_token_status
+        CHECK (status IN ('ISSUED', 'USED'))
+) ENGINE=InnoDB;
+
 CREATE INDEX idx_show_seats_booking ON show_seats (booking_id);
 CREATE INDEX idx_shows_movie ON shows (movie_id);
 CREATE INDEX idx_shows_screen ON shows (screen_id);
 CREATE INDEX idx_bookings_user ON bookings (user_id);
 CREATE INDEX idx_bookings_pending_expiry ON bookings (status, expires_at);
+CREATE INDEX idx_booking_gate_tokens_lookup ON booking_gate_tokens (token_hash, status);

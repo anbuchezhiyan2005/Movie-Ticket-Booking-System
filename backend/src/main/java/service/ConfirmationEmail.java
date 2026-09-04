@@ -12,5 +12,6 @@ public record ConfirmationEmail(
         String theatreLocation,
         LocalDateTime showTime,
         List<String> seats,
-        int totalAmount) {
+        int totalAmount,
+        String gateUrl) {
 }

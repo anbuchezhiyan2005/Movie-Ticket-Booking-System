@@ -6,6 +6,7 @@ D:\movie-ticket-booking-system\backend\src\main\java\config\EnvironmentConfig.ja
 D:\movie-ticket-booking-system\backend\src\main\java\config\JerseyApplication.java
 D:\movie-ticket-booking-system\backend\src\main\java\config\RuntimeLifeCycle.java
 D:\movie-ticket-booking-system\backend\src\main\java\dto\request\BookingRequest.java
+D:\movie-ticket-booking-system\backend\src\main\java\dto\request\GateRedeemRequest.java
 D:\movie-ticket-booking-system\backend\src\main\java\dto\request\LoginRequest.java
 D:\movie-ticket-booking-system\backend\src\main\java\dto\request\RegisterRequest.java
 D:\movie-ticket-booking-system\backend\src\main\java\dto\request\ScreenRequest.java
@@ -38,6 +39,7 @@ D:\movie-ticket-booking-system\backend\src\main\java\model\Show.java
 D:\movie-ticket-booking-system\backend\src\main\java\model\ShowSeat.java
 D:\movie-ticket-booking-system\backend\src\main\java\model\Theatre.java
 D:\movie-ticket-booking-system\backend\src\main\java\model\User.java
+D:\movie-ticket-booking-system\backend\src\main\java\repository\BookingGateTokenRepository.java
 D:\movie-ticket-booking-system\backend\src\main\java\repository\BookingRepository.java
 D:\movie-ticket-booking-system\backend\src\main\java\repository\JdbcSupport.java
 D:\movie-ticket-booking-system\backend\src\main\java\repository\MovieRepository.java
@@ -48,6 +50,7 @@ D:\movie-ticket-booking-system\backend\src\main\java\repository\TheatreRepositor
 D:\movie-ticket-booking-system\backend\src\main\java\repository\UserRepository.java
 D:\movie-ticket-booking-system\backend\src\main\java\resource\AuthResource.java
 D:\movie-ticket-booking-system\backend\src\main\java\resource\BookingResource.java
+D:\movie-ticket-booking-system\backend\src\main\java\resource\GateResource.java
 D:\movie-ticket-booking-system\backend\src\main\java\resource\HealthResource.java
 D:\movie-ticket-booking-system\backend\src\main\java\resource\MovieResource.java
 D:\movie-ticket-booking-system\backend\src\main\java\resource\ScreenResource.java
@@ -58,12 +61,15 @@ D:\movie-ticket-booking-system\backend\src\main\java\service\BookingExpirySchedu
 D:\movie-ticket-booking-system\backend\src\main\java\service\BookingService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\ConfirmationEmail.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\ConfirmationEmailService.java
+D:\movie-ticket-booking-system\backend\src\main\java\service\GateTokenService.java
+D:\movie-ticket-booking-system\backend\src\main\java\service\GateValidationService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\MovieService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\PaymentService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\ScreenService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\ShowService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\SmtpConfirmationEmailService.java
 D:\movie-ticket-booking-system\backend\src\main\java\service\TheatreService.java
+D:\movie-ticket-booking-system\backend\src\main\java\util\HmacUtil.java
 D:\movie-ticket-booking-system\backend\src\main\java\util\PasswordHasher.java
 D:\movie-ticket-booking-system\backend\src\main\java\util\RequestUsers.java
 D:\movie-ticket-booking-system\backend\src\main\java\util\ShowTimes.java

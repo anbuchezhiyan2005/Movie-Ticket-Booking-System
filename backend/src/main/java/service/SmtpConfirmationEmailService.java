@@ -94,11 +94,12 @@ public class SmtpConfirmationEmailService implements ConfirmationEmailService {
 
             String confirmationText = formatBody(confirmation);
             String contentId = "booking-confirmation-qr-" + confirmation.bookingId();
-            byte[] qrImage = generateQrCodeImage(confirmationText, 250, 250);
+                byte[] qrImage = generateQrCodeImage(confirmation.gateUrl(), 250, 250);
 
             MimeBodyPart htmlPart = new MimeBodyPart();
             htmlPart.setContent("<html><body><p>" + escapeHtml(confirmationText).replace("\n", "<br>")
-                    + "</p><p>Scan this QR code to view your booking confirmation details:</p>"
+                    + "</p><p>This QR code is a one-time pass. It must only be scanned by authorized personnel"
+                    + " at the theatre ticket counter or entrance. Do not share or self-scan it for validation.</p>"
                     + "<img src=\"cid:" + contentId + "\" alt=\"Booking confirmation QR code\""
                     + " width=\"250\" height=\"250\"></body></html>", "text/html; charset=UTF-8");
 
@@ -115,7 +116,10 @@ public class SmtpConfirmationEmailService implements ConfirmationEmailService {
             relatedPart.setContent(related);
 
             MimeBodyPart plainPart = new MimeBodyPart();
-            plainPart.setText(confirmationText, "UTF-8");
+                plainPart.setText(confirmationText + "\n\n"
+                    + "This QR code is a one-time pass. It must only be scanned by authorized personnel "
+                    + "at the theatre ticket counter or entrance. Do not share or self-scan it for validation.",
+                    "UTF-8");
 
             MimeMultipart alternative = new MimeMultipart("alternative");
             alternative.addBodyPart(plainPart);

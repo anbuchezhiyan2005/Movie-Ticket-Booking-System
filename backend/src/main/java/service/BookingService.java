@@ -23,6 +23,7 @@ import model.ShowSeat;
 import model.Theatre;
 import model.User;
 import repository.BookingRepository;
+import repository.BookingGateTokenRepository;
 import repository.MovieRepository;
 import repository.ScreenRepository;
 import repository.ShowRepository;
@@ -63,6 +64,7 @@ public class BookingService {
     private final PaymentService paymentService;
     private final SeatAvailabilityCache seatAvailabilityCache;
     private final ConfirmationEmailService confirmationEmailService;
+    private final GateTokenService gateTokenService;
 
     @Inject
     public BookingService(
@@ -75,7 +77,8 @@ public class BookingService {
             ShowSeatRepository showSeatRepository,
             PaymentService paymentService,
             SeatAvailabilityCache seatAvailabilityCache,
-            ConfirmationEmailService confirmationEmailService) {
+            ConfirmationEmailService confirmationEmailService,
+            GateTokenService gateTokenService) {
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.showRepository = showRepository;
@@ -86,6 +89,23 @@ public class BookingService {
         this.paymentService = paymentService;
         this.seatAvailabilityCache = seatAvailabilityCache;
         this.confirmationEmailService = confirmationEmailService;
+        this.gateTokenService = gateTokenService;
+    }
+
+    public BookingService(
+            BookingRepository bookingRepository,
+            UserRepository userRepository,
+            ShowRepository showRepository,
+            MovieRepository movieRepository,
+            ScreenRepository screenRepository,
+            TheatreRepository theatreRepository,
+            ShowSeatRepository showSeatRepository,
+            PaymentService paymentService,
+            SeatAvailabilityCache seatAvailabilityCache,
+            ConfirmationEmailService confirmationEmailService) {
+        this(bookingRepository, userRepository, showRepository, movieRepository, screenRepository,
+                theatreRepository, showSeatRepository, paymentService, seatAvailabilityCache,
+                confirmationEmailService, new GateTokenService(new BookingGateTokenRepository()));
     }
 
     public BookingResponse bookTickets(Long customerId, BookingRequest request) throws SQLException {
@@ -299,6 +319,9 @@ public class BookingService {
         booking.setExpiresAt(null);
         bookingRepository.update(booking);
 
+        LocalDateTime showEnd = show.getShowTiming().plusMinutes(movie.getDurationInMinutes());
+        String gateUrl = gateTokenService.issue(booking.getBookingId(), showEnd);
+
         // Surgical cache update: mark seats as BOOKED
         for (SeatRequest seat : request.getSeats()) {
             String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
@@ -318,7 +341,8 @@ public class BookingService {
             request.getSeats().stream()
                 .map(seat -> seat.getRowLabel() + "-" + seat.getSeatNumber())
                 .toList(),
-            booking.getTotalAmount());
+            booking.getTotalAmount(),
+            gateUrl);
         return new BookingResult(response, confirmationEmail);
     }
 

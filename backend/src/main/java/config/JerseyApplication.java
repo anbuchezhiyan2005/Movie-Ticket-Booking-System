@@ -12,11 +12,14 @@ import repository.ShowRepository;
 import repository.ShowSeatRepository;
 import repository.TheatreRepository;
 import repository.UserRepository;
+import repository.BookingGateTokenRepository;
 
 import service.AuthService;
 import service.BookingExpiryScheduler;
 import service.BookingService;
 import service.ConfirmationEmailService;
+import service.GateTokenService;
+import service.GateValidationService;
 import service.MovieService;
 import service.PaymentService;
 import service.ScreenService;
@@ -52,6 +55,7 @@ public class JerseyApplication extends ResourceConfig {
                 bindAsContract(ShowRepository.class);
                 bindAsContract(ShowSeatRepository.class);
                 bindAsContract(BookingRepository.class);
+                bindAsContract(BookingGateTokenRepository.class);
 
                 bindAsContract(AuthService.class);
                 bindAsContract(MovieService.class);
@@ -59,6 +63,8 @@ public class JerseyApplication extends ResourceConfig {
                 bindAsContract(ScreenService.class);
                 bindAsContract(ShowService.class);
                 bindAsContract(BookingService.class);
+                bindAsContract(GateTokenService.class);
+                bindAsContract(GateValidationService.class);
                 bindAsContract(PaymentService.class);
                 bindAsContract(SmtpConfirmationEmailService.class).to(ConfirmationEmailService.class);
                 bindAsContract(BookingExpiryScheduler.class);

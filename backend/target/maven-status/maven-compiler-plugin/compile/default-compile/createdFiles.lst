@@ -1,4 +1,5 @@
 dto\request\TheatreRequest.class
+resource\GateResource.class
 service\BookingService.class
 enums\BookingStatus.class
 resource\BookingResource.class
@@ -11,12 +12,16 @@ service\AuthService.class
 service\BookingService$BookingResult.class
 enums\Role.class
 service\BookingExpiryScheduler.class
+dto\request\GateRedeemRequest.class
 dto\response\MovieResponse.class
 service\ShowService.class
 model\Movie.class
 repository\JdbcSupport$SqlWork.class
 dto\response\ErrorResponse.class
 repository\UserRepository.class
+resource\GateResource$ErrorResponse.class
+service\GateValidationService$1.class
+service\GateValidationService$Reason.class
 service\PaymentService.class
 repository\JdbcSupport.class
 dto\response\TheatreResponse.class
@@ -26,6 +31,7 @@ resource\ShowResource.class
 service\ScreenService.class
 config\Database$Work.class
 service\SmtpConfirmationEmailService$1.class
+repository\BookingGateTokenRepository.class
 repository\BookingRepository.class
 model\Booking.class
 service\MovieService.class
@@ -37,6 +43,7 @@ config\JerseyApplication$1.class
 service\SmtpConfirmationEmailService$MailSettings.class
 config\EnvironmentConfig.class
 util\RequestUsers.class
+repository\BookingGateTokenRepository$Rejection.class
 exception\ValidationException.class
 dto\request\RegisterRequest.class
 dto\response\AuthResponse.class
@@ -50,7 +57,9 @@ service\ConfirmationEmail.class
 resource\AuthResource.class
 filter\AuthFilter.class
 resource\HealthResource.class
+service\GateValidationService$ValidationResult.class
 exception\AppExceptionMapper.class
+service\GateValidationService.class
 repository\ShowSeatRepository.class
 repository\TheatreRepository.class
 service\ConfirmationEmailService.class
@@ -71,6 +80,8 @@ util\ShowTimes.class
 config\JerseyApplication.class
 model\Screen.class
 repository\ShowRepository.class
+util\HmacUtil.class
 dto\request\BookingRequest.class
+service\GateTokenService.class
 config\Database.class
 service\SmtpConfirmationEmailService.class
