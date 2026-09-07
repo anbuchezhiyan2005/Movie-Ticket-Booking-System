@@ -63,4 +63,16 @@ class ApiHttpSmokeTest {
         assertEquals(401, protectedRequest.statusCode());
         assertTrue(protectedRequest.body().contains("Not authenticated"));
     }
+
+    @Test
+    void otpRoutesRequireAuthentication() throws Exception {
+        assertEquals(401, customer.post("/bookings/otp/request", "{}" ).statusCode());
+        assertEquals(401, customer.post("/bookings/1/otp/verify",
+                "{\"challengeToken\":\"x\",\"code\":\"000000\"}").statusCode());
+        assertEquals(401, customer.post("/bookings/1/otp/resend", "{}").statusCode());
+        assertEquals(401, customer.post("/bookings/1/cancel/otp/request", "{}").statusCode());
+        assertEquals(401, customer.post("/bookings/1/cancel/otp/verify",
+                "{\"challengeToken\":\"x\",\"code\":\"000000\"}").statusCode());
+        assertEquals(401, customer.post("/bookings/1/cancel/otp/resend", "{}").statusCode());
+    }
 }

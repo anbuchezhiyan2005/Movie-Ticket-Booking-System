@@ -10,6 +10,7 @@ public class AuthResponse {
     private Long userId;
     private String name;
     private String email;
+    private String phoneNumber;
     private Role role;
     private int walletBalance;
     private String csrfToken;
@@ -36,6 +37,14 @@ public class AuthResponse {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
     }
 
     public Role getRole() {

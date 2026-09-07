@@ -42,7 +42,8 @@ public class AuthFilter implements Filter {
         }
 
         // Skip authentication check for OPTIONS requests or public endpoints
-        if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod()) || isPublic(httpRequest)) {
+        if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())
+            || (isPublic(httpRequest) && !isAuthenticatedOAuthCallback(httpRequest))) {
             chain.doFilter(request, response);
             return;
         }
@@ -92,6 +93,18 @@ public class AuthFilter implements Filter {
                 || "DELETE".equalsIgnoreCase(method);
     }
 
+    private boolean isAuthenticatedOAuthCallback(HttpServletRequest request) {
+        String path = resolveRequestPath(request);
+        if (!"GET".equalsIgnoreCase(request.getMethod())
+                || !("/auth/google/callback".equals(path) || "/auth/twitter/callback".equals(path))) {
+            return false;
+        }
+        HttpSession session = request.getSession(false);
+        Object userId = session == null ? null : session.getAttribute(USER_ID);
+        Object role = session == null ? null : session.getAttribute(ROLE);
+        return userId instanceof Number && role instanceof String && isValidRole((String) role);
+    }
+
     /*
      * Checks if the requested endpoint is public (does not require authentication).
      * This is intentionally tolerant of root and static-resource requests because the filter
@@ -117,6 +130,10 @@ public class AuthFilter implements Filter {
                 return true;
             }
             if ("/shows".equals(path) || path.matches("/shows/\\d+/seats") || path.matches("/screens/\\d+/shows")) {
+                return true;
+            }
+            if ("/auth/google/start".equals(path) || "/auth/google/callback".equals(path)
+                    || "/auth/twitter/start".equals(path) || "/auth/twitter/callback".equals(path)) {
                 return true;
             }
         }

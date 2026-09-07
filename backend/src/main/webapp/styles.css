@@ -159,10 +159,19 @@ input, select {
 input:focus, select:focus {
     border-color: var(--ink);
 }
+.button,
+button.tab,
+.card-action,
+.admin-item,
+.seat,
+.close-button {
+    -webkit-text-fill-color: currentColor;
+}
 .button {
     border: 1px solid var(--button);
     background: var(--button);
-    color: var(--button-text);
+    color: var(--button-text) !important;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -178,8 +187,25 @@ input:focus, select:focus {
 }
 .button-quiet {
     background: transparent;
-    color: var(--ink);
+    color: var(--ink) !important;
     border-color: var(--line);
+}
+
+.social-auth {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.85rem;
+}
+
+.provider-links {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-top: 0.85rem;
+}
+.provider-links > span {
+    color: var(--button-text);
 }
 .subtle-link {
     border: 0;
@@ -253,6 +279,43 @@ input:focus, select:focus {
     font-size: 12px;
 }
 
+.otp-panel {
+    margin-top: 24px;
+    padding-top: 28px;
+    padding-bottom: 28px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+}
+.otp-panel-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 24px;
+}
+.otp-panel-heading h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); }
+.otp-form { max-width: 520px; }
+.otp-form input {
+    font-size: 1.5rem;
+    letter-spacing: 0.18em;
+    max-width: 230px;
+}
+.otp-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 12px;
+}
+.otp-timer, .otp-status {
+    min-height: 20px;
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+.otp-status { color: #9b3d2f; }
+
 .account-panel {
     max-width: 1180px;
     margin: 24px auto 0;
@@ -289,6 +352,10 @@ input:focus, select:focus {
 }
 .account-facts strong { color: var(--warning); }
 .account-facts .button { margin-left: auto; }
+.account-panel .button-quiet {
+    color: var(--button-text) !important;
+    border-color: rgba(255, 255, 255, 0.55);
+}
 
 .admin-panel {
     max-width: 1180px;
@@ -376,6 +443,11 @@ input:focus, select:focus {
 .details-panel .kicker { color: #d3d1cf; }
 .details-panel h2 { font-size: 38px; }
 .details-copy { max-width: 640px; color: #d0d3d1; line-height: 1.7; margin: 16px 0 20px; }
+.details-panel .button-quiet {
+    color: var(--button-text) !important;
+    border-color: rgba(255, 255, 255, 0.55);
+}
+.details-panel .button-quiet:hover { background: rgba(255, 255, 255, 0.12); }
 .show-row {
     display: flex;
     align-items: center;
@@ -438,6 +510,8 @@ footer {
     .admin-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 650px) {
+    .otp-meta { align-items: start; flex-direction: column; }
+    .otp-form input { max-width: 100%; }
     .topbar { padding: 0 5vw; }
     .user-label { display: none; }
     .hero-band {

@@ -19,7 +19,7 @@ public class UserRepository extends JdbcSupport {
     // Finds a user by their ID
     public Optional<User> findById(Long userId) {
         return execute(connection -> {
-            String sql = "SELECT id, name, email, password_hash, role, wallet_balance FROM users WHERE id = ?";
+            String sql = "SELECT id, name, email, phone_number, password_hash, role, wallet_balance FROM users WHERE id = ?";
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setLong(1, userId);
                 try (ResultSet rs = ps.executeQuery()) {
@@ -35,7 +35,7 @@ public class UserRepository extends JdbcSupport {
     // Finds a user by their email address
     public Optional<User> findByEmail(String email) {
         return execute(connection -> {
-            String sql = "SELECT id, name, email, password_hash, role, wallet_balance FROM users WHERE email = ?";
+            String sql = "SELECT id, name, email, phone_number, password_hash, role, wallet_balance FROM users WHERE email = ?";
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setString(1, email);
                 try (ResultSet rs = ps.executeQuery()) {
@@ -52,15 +52,16 @@ public class UserRepository extends JdbcSupport {
     public User save(User user) {
         return execute(connection -> {
             String sql = """
-                    INSERT INTO users (name, email, password_hash, role, wallet_balance)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO users (name, email, phone_number, password_hash, role, wallet_balance)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """;
             try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, user.getName());
                 ps.setString(2, user.getEmail());
-                ps.setString(3, user.getPasswordHash());
-                ps.setString(4, user.getRole().name());
-                ps.setInt(5, user.getWalletBalance());
+                ps.setString(3, user.getPhoneNumber());
+                ps.setString(4, user.getPasswordHash());
+                ps.setString(5, user.getRole().name());
+                ps.setInt(6, user.getWalletBalance());
                 ps.executeUpdate();
                 try (ResultSet keys = ps.getGeneratedKeys()) {
                     if (keys.next()) {
@@ -117,6 +118,7 @@ public class UserRepository extends JdbcSupport {
         user.setId(rs.getLong("id"));
         user.setName(rs.getString("name"));
         user.setEmail(rs.getString("email"));
+        user.setPhoneNumber(rs.getString("phone_number"));
         user.setPasswordHash(rs.getString("password_hash"));
         user.setRole(Role.valueOf(rs.getString("role")));
         user.setWalletBalance(rs.getInt("wallet_balance"));

@@ -68,6 +68,21 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
+    public Optional<Booking> findByIdForUpdate(Long bookingId) {
+        return execute(connection -> {
+            String sql = """
+                    SELECT booking_id, user_id, show_id, booking_time, status, total_amount, expires_at
+                    FROM bookings WHERE booking_id = ? FOR UPDATE
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, bookingId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+                }
+            }
+        });
+    }
+
     // Retrieves all bookings made by a specific user
     public List<Booking> findByUserId(Long userId) {
         return execute(connection -> {
@@ -94,7 +109,7 @@ public class BookingRepository extends JdbcSupport {
             String sql = """
                     SELECT booking_id, user_id, show_id, booking_time, status, total_amount, expires_at
                     FROM bookings
-                    WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < ?
+                    WHERE status IN ('PENDING', 'AWAITING_OTP') AND expires_at IS NOT NULL AND expires_at < ?
                     """;
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setTimestamp(1, Timestamp.valueOf(now));

@@ -12,6 +12,8 @@ import repository.ShowRepository;
 import repository.ShowSeatRepository;
 import repository.TheatreRepository;
 import repository.UserRepository;
+import repository.UserIdentityRepository;
+import repository.OtpChallengeRepository;
 import repository.BookingGateTokenRepository;
 
 import service.AuthService;
@@ -49,6 +51,8 @@ public class JerseyApplication extends ResourceConfig {
             @Override
             protected void configure() {
                 bindAsContract(UserRepository.class);
+                bindAsContract(UserIdentityRepository.class);
+                bindAsContract(OtpChallengeRepository.class);
                 bindAsContract(MovieRepository.class);
                 bindAsContract(TheatreRepository.class);
                 bindAsContract(ScreenRepository.class);
@@ -58,6 +62,10 @@ public class JerseyApplication extends ResourceConfig {
                 bindAsContract(BookingGateTokenRepository.class);
 
                 bindAsContract(AuthService.class);
+                bindAsContract(service.OAuthStateService.class);
+                bindAsContract(service.OAuthProviderService.class);
+                bindAsContract(service.OtpService.class);
+                bindAsContract(service.OtpEmailService.class);
                 bindAsContract(MovieService.class);
                 bindAsContract(TheatreService.class);
                 bindAsContract(ScreenService.class);

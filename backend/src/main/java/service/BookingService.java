@@ -25,6 +25,7 @@ import model.User;
 import repository.BookingRepository;
 import repository.BookingGateTokenRepository;
 import repository.MovieRepository;
+import repository.OtpChallengeRepository;
 import repository.ScreenRepository;
 import repository.ShowRepository;
 import repository.ShowSeatRepository;
@@ -65,6 +66,7 @@ public class BookingService {
     private final SeatAvailabilityCache seatAvailabilityCache;
     private final ConfirmationEmailService confirmationEmailService;
     private final GateTokenService gateTokenService;
+    private final OtpService otpService;
 
     @Inject
     public BookingService(
@@ -78,7 +80,8 @@ public class BookingService {
             PaymentService paymentService,
             SeatAvailabilityCache seatAvailabilityCache,
             ConfirmationEmailService confirmationEmailService,
-            GateTokenService gateTokenService) {
+            GateTokenService gateTokenService,
+            OtpService otpService) {
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.showRepository = showRepository;
@@ -90,6 +93,7 @@ public class BookingService {
         this.seatAvailabilityCache = seatAvailabilityCache;
         this.confirmationEmailService = confirmationEmailService;
         this.gateTokenService = gateTokenService;
+        this.otpService = otpService;
     }
 
     public BookingService(
@@ -105,7 +109,8 @@ public class BookingService {
             ConfirmationEmailService confirmationEmailService) {
         this(bookingRepository, userRepository, showRepository, movieRepository, screenRepository,
                 theatreRepository, showSeatRepository, paymentService, seatAvailabilityCache,
-                confirmationEmailService, new GateTokenService(new BookingGateTokenRepository()));
+            confirmationEmailService, new GateTokenService(new BookingGateTokenRepository()),
+            new OtpService(new OtpChallengeRepository()));
     }
 
     public BookingResponse bookTickets(Long customerId, BookingRequest request) throws SQLException {
@@ -132,6 +137,81 @@ public class BookingService {
         } finally {
             acquiredLocks.forEach((lockKey, lockToken) -> activeBookingLocks.remove(lockKey, lockToken));
         }
+    }
+
+    public BookingResponse holdTickets(Long customerId, BookingRequest request) throws SQLException {
+        validateBookingRequest(request);
+        List<String> lockKeys = bookingLockKeys(request);
+        Map<String, Object> acquiredLocks = new LinkedHashMap<>();
+        try {
+            for (String lockKey : lockKeys) {
+                Object lockToken = new Object();
+                if (activeBookingLocks.putIfAbsent(lockKey, lockToken) != null) {
+                    throw new ConflictException("One of the selected seats is currently being booked");
+                }
+                acquiredLocks.put(lockKey, lockToken);
+            }
+            BookingResponse response = Database.inTransaction(() -> holdTicketsInternal(customerId, request));
+            LOGGER.info(() -> "Booking seats held awaiting OTP userId=" + customerId
+                    + " bookingId=" + response.getBookingId());
+            return response;
+        } finally {
+            acquiredLocks.forEach((lockKey, lockToken) -> activeBookingLocks.remove(lockKey, lockToken));
+        }
+    }
+
+    public BookingResponse confirmHeldBooking(Long bookingId, Long customerId) throws SQLException {
+        BookingResult result = Database.inTransaction(() -> confirmHeldBookingInternal(bookingId, customerId));
+        try {
+            confirmationEmailService.queueConfirmation(result.confirmationEmail());
+            LOGGER.info(() -> "Booking confirmation email queued bookingId=" + bookingId);
+        } catch (RuntimeException error) {
+            LOGGER.log(Level.SEVERE, "Unable to queue booking confirmation email for booking " + bookingId, error);
+        }
+        return result.response();
+    }
+
+    public BookingResponse confirmHeldBookingWithOtp(Long bookingId, Long customerId,
+                                                     String challengeToken, String code) throws SQLException {
+        // OTP consumption and payment must commit or roll back together.
+        BookingResult result = Database.inTransaction(() -> {
+            if (!otpService.verifyCodeInTransaction(challengeToken, customerId, bookingId,
+                    enums.OtpPurpose.BOOKING, code)) {
+                return null;
+            }
+            return confirmHeldBookingInternal(bookingId, customerId);
+        });
+        if (result == null) {
+            throw new ValidationException("OTP is invalid");
+        }
+        try {
+            confirmationEmailService.queueConfirmation(result.confirmationEmail());
+            LOGGER.info(() -> "Booking confirmation email queued bookingId=" + bookingId);
+        } catch (RuntimeException error) {
+            LOGGER.log(Level.SEVERE, "Unable to queue booking confirmation email for booking " + bookingId, error);
+        }
+        return result.response();
+    }
+
+    public void expireBookingHold(Long bookingId, Long customerId) throws SQLException {
+        Database.inTransaction(() -> {
+            Booking booking = getBookingEntity(bookingId);
+            if (!booking.getUserId().equals(customerId)) {
+                throw new ForbiddenException("You are not allowed to release this booking");
+            }
+            if (booking.getStatus() == BookingStatus.AWAITING_OTP) {
+                List<ShowSeat> seats = showSeatRepository.findByBookingId(bookingId);
+                showSeatRepository.deleteByBookingId(bookingId);
+                booking.setStatus(BookingStatus.EXPIRED);
+                booking.setExpiresAt(null);
+                bookingRepository.update(booking);
+                seats.forEach(seat -> seatAvailabilityCache.removeSeat(booking.getShowId(),
+                        seat.getRowLabel() + "-" + seat.getSeatNumber()));
+                LOGGER.info(() -> "Booking OTP hold released bookingId=" + bookingId
+                        + " reason=email_delivery_failed");
+            }
+            return null;
+        });
     }
 
     private List<String> bookingLockKeys(BookingRequest request) {
@@ -166,6 +246,22 @@ public class BookingService {
         });
     }
 
+    public void cancelBookingWithOtp(Long bookingId, Long customerId,
+                                     String challengeToken, String code) throws SQLException {
+        // Refund, seat release, status, and OTP consumption share one transaction.
+        Boolean cancelled = Database.inTransaction(() -> {
+            if (!otpService.verifyCodeInTransaction(challengeToken, customerId, bookingId,
+                    enums.OtpPurpose.CANCELLATION, code)) {
+                return false;
+            }
+            cancelInternal(bookingId, customerId);
+            return true;
+        });
+        if (!cancelled) {
+            throw new ValidationException("OTP is invalid");
+        }
+    }
+
     public List<SeatResponse> getAvailableSeats(Long showId) {
         Show show = getShow(showId);
         Screen screen = getScreen(show.getScreenId());
@@ -182,7 +278,8 @@ public class BookingService {
             java.util.Map<String, String> seatStatuses = showSeatRepository.findStatusByShowId(showId);
             occupiedMap = new java.util.HashMap<>();
             for (java.util.Map.Entry<String, String> entry : seatStatuses.entrySet()) {
-                CachedShowSeats.SeatStatus status = "PENDING".equals(entry.getValue())
+                CachedShowSeats.SeatStatus status = ("PENDING".equals(entry.getValue())
+                    || "AWAITING_OTP".equals(entry.getValue()))
                         ? CachedShowSeats.SeatStatus.HELD
                         : CachedShowSeats.SeatStatus.BOOKED;
                 occupiedMap.put(entry.getKey(), status);
@@ -346,8 +443,100 @@ public class BookingService {
         return new BookingResult(response, confirmationEmail);
     }
 
+    private BookingResponse holdTicketsInternal(Long customerId, BookingRequest request) {
+        User customer = getUser(customerId);
+        if (customer.getRole() != Role.CUSTOMER) {
+            throw new ForbiddenException("Only customers can create bookings");
+        }
+        Show show = getShow(request.getShowId());
+        if (!show.getShowTiming().isAfter(LocalDateTime.now())) {
+            throw new ValidationException("Cannot book a show that has already started");
+        }
+        Screen screen = getScreen(show.getScreenId());
+        Movie movie = getMovie(show.getMovieId());
+        validateSeats(request.getSeats(), screen);
+        validateDuplicateSeats(request.getSeats());
+
+        int totalAmount;
+        try {
+            totalAmount = Math.multiplyExact(movie.getTicketPrice(), request.getSeats().size());
+        } catch (ArithmeticException exception) {
+            throw new ValidationException("Booking total is too large");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Booking booking = new Booking();
+        booking.setUserId(customerId);
+        booking.setShowId(show.getShowId());
+        booking.setStatus(BookingStatus.AWAITING_OTP);
+        booking.setTotalAmount(totalAmount);
+        booking.setBookingTime(now);
+        booking.setExpiresAt(now.plusMinutes(PENDING_MINUTES));
+        booking = bookingRepository.save(booking);
+
+        for (SeatRequest seat : request.getSeats()) {
+            ShowSeat showSeat = new ShowSeat();
+            showSeat.setShowId(show.getShowId());
+            showSeat.setRowLabel(seat.getRowLabel());
+            showSeat.setSeatNumber(seat.getSeatNumber());
+            showSeat.setBookingId(booking.getBookingId());
+            if (!showSeatRepository.claimSeat(showSeat)) {
+                throw new ConflictException("Seat " + seat.getRowLabel() + seat.getSeatNumber()
+                        + " is no longer available");
+            }
+            seatAvailabilityCache.addSeat(show.getShowId(), seat.getRowLabel() + "-" + seat.getSeatNumber(),
+                    CachedShowSeats.SeatStatus.HELD);
+        }
+        return toBookingResponse(booking, request.getSeats());
+    }
+
+    private BookingResult confirmHeldBookingInternal(Long bookingId, Long customerId) {
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+            .orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (!booking.getUserId().equals(customerId)) {
+            throw new ForbiddenException("You are not allowed to confirm this booking");
+        }
+        if (booking.getStatus() != BookingStatus.AWAITING_OTP) {
+            throw new ValidationException("Booking is not awaiting verification");
+        }
+        if (booking.getExpiresAt() == null || LocalDateTime.now().isAfter(booking.getExpiresAt())) {
+            throw new ValidationException("Booking hold has expired");
+        }
+
+        User customer = getUser(customerId);
+        Show show = getShow(booking.getShowId());
+        Movie movie = getMovie(show.getMovieId());
+        Screen screen = getScreen(show.getScreenId());
+        Theatre theatre = getTheatre(screen.getTheatreId());
+        List<ShowSeat> seats = showSeatRepository.findByBookingId(bookingId);
+        try {
+            paymentService.processPayment(customerId, theatre.getAdminId(), booking.getTotalAmount());
+        } catch (RuntimeException error) {
+            LOGGER.log(Level.WARNING, "Booking payment failed bookingId=" + bookingId
+                    + " userId=" + customerId, error);
+            throw error;
+        }
+
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setExpiresAt(null);
+        bookingRepository.update(booking);
+        LocalDateTime showEnd = show.getShowTiming().plusMinutes(movie.getDurationInMinutes());
+        String gateUrl = gateTokenService.issue(bookingId, showEnd);
+        for (ShowSeat seat : seats) {
+            seatAvailabilityCache.addSeat(show.getShowId(), seat.getRowLabel() + "-" + seat.getSeatNumber(),
+                    CachedShowSeats.SeatStatus.BOOKED);
+        }
+        ConfirmationEmail email = new ConfirmationEmail(customer.getEmail(), customer.getName(), bookingId,
+                movie.getMovieName(), theatre.getTheatreName(), theatre.getTheatreLocation(), show.getShowTiming(),
+                seats.stream().map(seat -> seat.getRowLabel() + "-" + seat.getSeatNumber()).toList(),
+                booking.getTotalAmount(), gateUrl);
+        LOGGER.info(() -> "Booking confirmed after OTP bookingId=" + bookingId + " userId=" + customerId);
+        return new BookingResult(toBookingResponse(booking), email);
+    }
+
     private void cancelInternal(Long bookingId, Long customerId) {
-        Booking booking = getBookingEntity(bookingId);
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+            .orElseThrow(() -> new NotFoundException("Booking not found"));
         if (!booking.getUserId().equals(customerId)) {
             throw new ForbiddenException("You are not allowed to cancel this booking");
         }
@@ -376,6 +565,23 @@ public class BookingService {
         for (ShowSeat seat : cancelledSeats) {
             String seatKey = seat.getRowLabel() + "-" + seat.getSeatNumber();
             seatAvailabilityCache.removeSeat(booking.getShowId(), seatKey);
+        }
+    }
+
+    public void validateCancellation(Long bookingId, Long customerId) {
+        cancelEligibility(bookingId, customerId);
+    }
+
+    private void cancelEligibility(Long bookingId, Long customerId) {
+        Booking booking = getBookingEntity(bookingId);
+        if (!booking.getUserId().equals(customerId)) {
+            throw new ForbiddenException("You are not allowed to cancel this booking");
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new ValidationException("Only confirmed bookings can be cancelled");
+        }
+        if (ShowTimes.hasStarted(getShow(booking.getShowId()).getShowTiming(), LocalDateTime.now())) {
+            throw new ValidationException("Cannot cancel a booking after the show has started");
         }
     }
 

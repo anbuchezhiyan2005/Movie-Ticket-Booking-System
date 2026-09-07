@@ -34,6 +34,11 @@
             <div class="wallet-total"><span>Available balance</span><strong id="wallet-balance">Rs 0</strong></div>
         </div>
         <div class="account-facts"><span>Role <strong id="account-role">CUSTOMER</strong></span><span id="wallet-help">Balance updates after every booking and cancellation</span><button id="refresh-wallet-button" class="button button-quiet" type="button">Refresh balance</button></div>
+        <div id="provider-links" class="provider-links hidden">
+            <span>Sign-in methods</span>
+            <button id="link-google-button" class="button button-quiet" type="button">Link Google</button>
+            <button id="link-twitter-button" class="button button-quiet" type="button">Link Twitter</button>
+        </div>
     </section>
 
     <section id="auth-panel" class="panel auth-panel">
@@ -52,9 +57,62 @@
         <form id="auth-form">
             <label id="name-field" class="field hidden">Name<input id="name" type="text" autocomplete="name"></label>
             <label class="field">Email<input id="email" type="email" required autocomplete="email"></label>
+            <label id="phone-field" class="field hidden">Phone number<input id="phone-number" type="tel" inputmode="tel" autocomplete="tel" placeholder="+14155552671" pattern="\\+[1-9][0-9]{7,14}"></label>
             <label class="field">Password<input id="password" type="password" required minlength="6" autocomplete="current-password"></label>
             <label id="admin-key-field" class="field hidden">Admin access code<input id="admin-key" type="password" autocomplete="off"></label>
             <button class="button button-primary" type="submit"><span id="auth-submit-label">Log in</span><span aria-hidden="true">&#8594;</span></button>
+        </form>
+        <div class="social-auth" aria-label="Social sign in">
+            <button id="google-sign-in" class="button button-quiet" type="button">Continue with Google</button>
+            <button id="twitter-sign-in" class="button button-quiet" type="button">Continue with Twitter</button>
+        </div>
+    </section>
+
+    <section id="booking-otp-panel" class="panel otp-panel hidden" aria-labelledby="booking-otp-panel-title">
+        <div class="otp-panel-heading">
+            <div>
+                <p class="kicker">Booking verification</p>
+                <h2 id="booking-otp-panel-title">Confirm booking</h2>
+                <p id="booking-otp-destination" class="inline-copy"></p>
+            </div>
+            <button id="booking-otp-close-button" class="close-button" type="button" aria-label="Close booking verification">&#215;</button>
+        </div>
+        <form id="booking-otp-form" class="otp-form">
+            <label class="field" for="booking-otp-code">Verification code
+                <input id="booking-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                       pattern="[0-9]{6}" maxlength="6" required aria-describedby="booking-otp-status">
+            </label>
+            <div class="otp-meta">
+                <span>Code expires in <strong id="booking-otp-expiry-timer">05:00</strong></span>
+                <button id="booking-otp-resend-button" class="button button-quiet" type="button" disabled>Resend code</button>
+            </div>
+            <p id="booking-otp-resend-timer" class="otp-timer" aria-live="polite"></p>
+            <p id="booking-otp-status" class="otp-status" aria-live="polite"></p>
+            <button id="booking-otp-verify-button" class="button button-primary" type="submit">Verify and book</button>
+        </form>
+    </section>
+
+    <section id="cancellation-otp-panel" class="panel otp-panel hidden" aria-labelledby="otp-panel-title">
+        <div class="otp-panel-heading">
+            <div>
+                <p class="kicker">Cancellation verification</p>
+                <h2 id="otp-panel-title">Confirm cancellation</h2>
+                <p id="otp-panel-destination" class="inline-copy"></p>
+            </div>
+            <button id="otp-close-button" class="close-button" type="button" aria-label="Close cancellation verification">&#215;</button>
+        </div>
+        <form id="cancellation-otp-form" class="otp-form">
+            <label class="field" for="cancellation-otp-code">Verification code
+                <input id="cancellation-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                       pattern="[0-9]{6}" maxlength="6" required aria-describedby="otp-status">
+            </label>
+            <div class="otp-meta">
+                <span>Code expires in <strong id="otp-expiry-timer">05:00</strong></span>
+                <button id="otp-resend-button" class="button button-quiet" type="button" disabled>Resend code</button>
+            </div>
+            <p id="otp-resend-timer" class="otp-timer" aria-live="polite"></p>
+            <p id="otp-status" class="otp-status" aria-live="polite"></p>
+            <button id="otp-verify-button" class="button button-primary" type="submit">Verify and cancel</button>
         </form>
     </section>
 

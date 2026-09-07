@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import service.BookingService;
+import exception.ValidationException;
 import util.RequestUsers;
 
 import java.sql.SQLException;
@@ -34,9 +35,8 @@ public class BookingResource {
 
     @POST
     public Response create(BookingRequest body, @Context HttpServletRequest request) throws SQLException {
-        Long customerId = RequestUsers.requireCustomer(request);
-        BookingResponse created = bookingService.bookTickets(customerId, body);
-        return Response.status(Response.Status.CREATED).entity(created).build();
+        RequestUsers.requireCustomer(request);
+        throw new ValidationException("Booking requires email verification");
     }
 
     @GET
@@ -55,8 +55,7 @@ public class BookingResource {
     @POST
     @Path("/{id}/cancel")
     public Response cancel(@PathParam("id") Long id, @Context HttpServletRequest request) throws SQLException {
-        Long customerId = RequestUsers.requireCustomer(request);
-        bookingService.cancelBooking(id, customerId);
-        return Response.noContent().build();
+        RequestUsers.requireCustomer(request);
+        throw new ValidationException("Cancellation requires email verification");
     }
 }
