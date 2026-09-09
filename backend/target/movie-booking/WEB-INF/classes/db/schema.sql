@@ -11,13 +11,33 @@ CREATE TABLE users (
     id              BIGINT       NOT NULL AUTO_INCREMENT,
     name            VARCHAR(100)  NOT NULL,
     email           VARCHAR(255)  NOT NULL,
-    password_hash   VARCHAR(255)  NOT NULL,
+    phone_number    VARCHAR(16)   NULL,
+    password_hash   VARCHAR(255)  NULL,
     role            VARCHAR(20)   NOT NULL,
     wallet_balance  INT           NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_email (email),
     CONSTRAINT chk_users_role CHECK (role IN ('CUSTOMER', 'ADMIN'))
 ) ENGINE=InnoDB;
+
+CREATE TABLE user_identities (
+    id                BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id           BIGINT       NOT NULL,
+    provider          VARCHAR(20)  NOT NULL,
+    provider_subject  VARCHAR(255) NOT NULL,
+    provider_email    VARCHAR(255) NULL,
+    display_name      VARCHAR(100) NULL,
+    created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_user_identities_provider_subject (provider, provider_subject),
+    UNIQUE KEY uk_user_identities_user_provider (user_id, provider),
+    CONSTRAINT fk_user_identities_user
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT chk_user_identities_provider CHECK (provider IN ('GOOGLE', 'TWITTER'))
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_user_identities_user ON user_identities (user_id);
 
 CREATE TABLE theatres (
     theatre_id       BIGINT       NOT NULL AUTO_INCREMENT,
@@ -77,8 +97,34 @@ CREATE TABLE bookings (
     CONSTRAINT fk_bookings_show
         FOREIGN KEY (show_id) REFERENCES shows (show_id),
     CONSTRAINT chk_bookings_status
-        CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED'))
+        CHECK (status IN ('AWAITING_OTP', 'PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED'))
 ) ENGINE=InnoDB;
+
+CREATE TABLE otp_challenges (
+    id                   BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id              BIGINT       NOT NULL,
+    booking_id           BIGINT       NULL,
+    purpose              VARCHAR(20)  NOT NULL,
+    challenge_token_hash CHAR(64)     NOT NULL,
+    otp_hash             CHAR(64)     NOT NULL,
+    expires_at           DATETIME     NOT NULL,
+    attempt_count        INT          NOT NULL DEFAULT 0,
+    max_attempts         INT          NOT NULL DEFAULT 5,
+    last_sent_at         DATETIME     NOT NULL,
+    consumed_at          DATETIME     NULL,
+    created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_otp_challenges_token (challenge_token_hash),
+    CONSTRAINT fk_otp_challenges_user
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_otp_challenges_booking
+        FOREIGN KEY (booking_id) REFERENCES bookings (booking_id) ON DELETE CASCADE,
+    CONSTRAINT chk_otp_challenges_purpose
+        CHECK (purpose IN ('BOOKING', 'CANCELLATION'))
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_otp_challenges_lookup
+    ON otp_challenges (user_id, purpose, booking_id, consumed_at, expires_at);
 
 -- Sparse occupancy: a row exists only when a booking has claimed the seat.
 CREATE TABLE show_seats (

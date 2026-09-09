@@ -23,8 +23,8 @@ public final class OAuthConfiguration {
                 "TWITTER_CLIENT_ID",
                 "TWITTER_CLIENT_SECRET",
                 "TWITTER_REDIRECT_URI",
-                "https://twitter.com/i/oauth2/authorize",
-                "https://api.twitter.com/2/oauth2/token");
+                "https://x.com/i/oauth2/authorize",
+                "https://api.x.com/2/oauth2/token");
     }
 
     public static Provider forProvider(AuthProvider provider) {

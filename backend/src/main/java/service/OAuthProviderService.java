@@ -63,7 +63,7 @@ public class OAuthProviderService {
         OAuthStateService.Transaction transaction = stateService.begin(
                 request, provider, configuration.redirectUri(), intent, userId);
 
-        String scope = provider == AuthProvider.GOOGLE ? "openid email profile" : "users.read";
+        String scope = provider == AuthProvider.GOOGLE ? "openid email profile" : "tweet.read users.read";
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("client_id", configuration.clientId());
         parameters.put("redirect_uri", configuration.redirectUri());
@@ -98,14 +98,21 @@ public class OAuthProviderService {
                 + " codeVerifierPresent=" + (transaction.codeVerifier() != null)
                 + " clientSecretPresent=" + (configuration.clientSecret() != null));
         }
-        JsonNode token = postForm(configuration.tokenEndpoint(), form(
+        Map<String, String> tokenValues = form(
                 "code", code,
-                "client_id", configuration.clientId(),
-                "client_secret", configuration.clientSecret(),
                 "redirect_uri", transaction.redirectUri(),
                 "grant_type", "authorization_code",
-            "code_verifier", transaction.codeVerifier()),
+            "code_verifier", transaction.codeVerifier());
+        JsonNode token = postForm(configuration.tokenEndpoint(), tokenValues,
             expectedProvider == AuthProvider.TWITTER ? configuration : null);
+        if (expectedProvider == AuthProvider.TWITTER) {
+            LOGGER.info("Twitter token response"
+                    + " token_type=" + redactedField(token, "token_type")
+                    + " expires_in=" + redactedField(token, "expires_in")
+                    + " scope=" + redactedField(token, "scope")
+                    + " access_token=[REDACTED]"
+                    + " refresh_token=[REDACTED]");
+        }
         String accessToken = requiredText(token, "access_token");
 
         OAuthProfile profile = expectedProvider == AuthProvider.GOOGLE
@@ -183,7 +190,7 @@ public class OAuthProviderService {
     }
 
     private OAuthProfile twitterProfile(String accessToken) {
-        JsonNode response = getJson("https://api.twitter.com/2/users/me?user.fields=name,username", accessToken);
+        JsonNode response = getJson("https://api.x.com/2/users/me?user.fields=name,username", accessToken);
         JsonNode data = response.path("data");
         return new OAuthProfile(
                 requiredText(data, "id"),
@@ -200,12 +207,11 @@ public class OAuthProviderService {
             String credentials = basicAuthProvider.clientId() + ":" + basicAuthProvider.clientSecret();
             builder.header("Authorization", "Basic " + Base64.getEncoder()
                     .encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
-            values = new LinkedHashMap<>(values);
-            values.remove("client_secret");
         }
         HttpRequest request = builder
                 .POST(HttpRequest.BodyPublishers.ofString(encode(values)))
                 .build();
+
         return send(request);
     }
 
@@ -272,6 +278,11 @@ public class OAuthProviderService {
     private String text(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() ? null : value.asText();
+    }
+
+    private String redactedField(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? "[MISSING]" : value.asText();
     }
 
     private String firstNonBlank(String first, String fallback) {

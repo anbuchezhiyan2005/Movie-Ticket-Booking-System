@@ -1,10 +1,13 @@
+service\OtpBookingWorkflowIntegrationTest$BookingResponseData.class
 service\AuthServiceTest.class
 service\ShowServiceDeletionRulesTest$FakeTheatreRepository.class
 service\BookingServiceTest.class
 http\HttpTestClient.class
 repository\ShowSeatRepositoryIntegrationTest.class
+service\AuthServiceTest$FakeUserIdentityRepository.class
 service\ShowServiceDeletionRulesTest$FakeScreenRepository.class
 service\ShowServiceDeletionRulesTest$FakeMovieRepository.class
+service\OtpBookingWorkflowIntegrationTest.class
 service\TheatreServiceUpdateRulesTest$FakeBookingRepository.class
 http\ApiHttpSmokeTest.class
 service\ShowServiceDeletionRulesTest.class
@@ -13,5 +16,6 @@ service\TheatreServiceUpdateRulesTest.class
 service\ShowServiceDeletionRulesTest$FakeBookingRepository.class
 service\TheatreServiceUpdateRulesTest$FakeTheatreRepository.class
 service\AuthServiceTest$FakeUserRepository.class
+service\OAuthStateServiceTest.class
 service\ShowServiceDeletionRulesTest$FakeShowRepository.class
 service\TheatreServiceUpdateRulesTest$FakeScreenRepository.class

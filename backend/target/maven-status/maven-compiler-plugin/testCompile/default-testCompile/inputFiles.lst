@@ -4,5 +4,7 @@ D:\movie-ticket-booking-system\backend\src\test\java\repository\ShowSeatReposito
 D:\movie-ticket-booking-system\backend\src\test\java\resource\ShowResourceRouteTest.java
 D:\movie-ticket-booking-system\backend\src\test\java\service\AuthServiceTest.java
 D:\movie-ticket-booking-system\backend\src\test\java\service\BookingServiceTest.java
+D:\movie-ticket-booking-system\backend\src\test\java\service\OAuthStateServiceTest.java
+D:\movie-ticket-booking-system\backend\src\test\java\service\OtpBookingWorkflowIntegrationTest.java
 D:\movie-ticket-booking-system\backend\src\test\java\service\ShowServiceDeletionRulesTest.java
 D:\movie-ticket-booking-system\backend\src\test\java\service\TheatreServiceUpdateRulesTest.java

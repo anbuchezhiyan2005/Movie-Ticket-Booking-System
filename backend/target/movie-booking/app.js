@@ -11,6 +11,10 @@ let selectedTheatre;
 let selectedScreen;
 let movies = [];
 let seatRefreshTimer;
+let cancellationOtp;
+let cancellationOtpTimer;
+let bookingOtp;
+let bookingOtpTimer;
 
 const $ = (selector) => document.querySelector(selector);
 const notice = $('#notice');
@@ -50,6 +54,7 @@ function setLoggedIn(user) {
     $('#auth-panel').classList.add('hidden');
     $('#wallet-button').classList.remove('hidden');
     $('#logout-button').classList.remove('hidden');
+    $('#provider-links').classList.toggle('hidden', user.role !== 'CUSTOMER');
     $('#user-label').textContent = `${user.name} / ${user.role}`;
     if (user.role === 'ADMIN') {
         $('#admin-panel').classList.remove('hidden');
@@ -74,10 +79,130 @@ function setLoggedOut() {
     $('#account-panel').classList.add('hidden');
     $('#wallet-button').classList.add('hidden');
     $('#logout-button').classList.add('hidden');
+    $('#provider-links').classList.add('hidden');
     $('#user-label').textContent = 'Browsing as guest';
     selectedTheatre = undefined;
     selectedScreen = undefined;
     stopSeatRefresh();
+    closeCancellationOtp();
+    closeBookingOtp();
+}
+
+function parseServerTimestamp(value, fallback) {
+    const parsed = typeof value === 'number' ? value : Date.parse(String(value || '').replace(' ', 'T'));
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatCountdown(milliseconds) {
+    const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function renderCancellationOtp() {
+    const panel = $('#cancellation-otp-panel');
+    panel.classList.remove('hidden');
+    $('#otp-panel-destination').textContent = `A code was sent to ${cancellationOtp.destination} for booking #${cancellationOtp.bookingId}.`;
+    $('#cancellation-otp-code').value = '';
+    $('#otp-status').textContent = '';
+    updateCancellationOtpTimers();
+    $('#cancellation-otp-code').focus();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateCancellationOtpTimers() {
+    if (!cancellationOtp) return;
+    const now = Date.now();
+    const expiresIn = cancellationOtp.expiresAt - now;
+    const resendIn = cancellationOtp.resendAvailableAt - now;
+    $('#otp-expiry-timer').textContent = formatCountdown(expiresIn);
+    $('#otp-resend-button').disabled = resendIn > 0 || cancellationOtp.busy || expiresIn <= 0;
+    $('#otp-resend-timer').textContent = expiresIn <= 0
+        ? 'This code has expired. Close this panel and start cancellation again.'
+        : resendIn > 0 ? `You can resend in ${formatCountdown(resendIn)}.` : 'You can request a new code.';
+    $('#otp-verify-button').disabled = cancellationOtp.busy || expiresIn <= 0;
+    if (expiresIn <= 0) {
+        clearInterval(cancellationOtpTimer);
+        $('#otp-status').textContent = 'The verification window has expired.';
+    }
+}
+
+function startCancellationOtpTimer() {
+    clearInterval(cancellationOtpTimer);
+    cancellationOtpTimer = setInterval(updateCancellationOtpTimers, 1000);
+}
+
+function closeCancellationOtp() {
+    clearInterval(cancellationOtpTimer);
+    cancellationOtpTimer = undefined;
+    cancellationOtp = undefined;
+    $('#cancellation-otp-panel')?.classList.add('hidden');
+}
+
+function storeCancellationChallenge(bookingId, challenge) {
+    cancellationOtp = {
+        bookingId,
+        challengeToken: challenge.challengeToken,
+        destination: challenge.destination,
+        expiresAt: parseServerTimestamp(challenge.expiresAt, Date.now() + 5 * 60 * 1000),
+        resendAvailableAt: parseServerTimestamp(challenge.resendAvailableAt, Date.now() + 60 * 1000),
+        busy: false
+    };
+    renderCancellationOtp();
+    startCancellationOtpTimer();
+}
+
+function renderBookingOtp() {
+    const panel = $('#booking-otp-panel');
+    panel.classList.remove('hidden');
+    $('#booking-otp-destination').textContent = `A code was sent to ${bookingOtp.destination} for your booking.`;
+    $('#booking-otp-code').value = '';
+    $('#booking-otp-status').textContent = '';
+    updateBookingOtpTimers();
+    $('#booking-otp-code').focus();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateBookingOtpTimers() {
+    if (!bookingOtp) return;
+    const now = Date.now();
+    const expiresIn = bookingOtp.expiresAt - now;
+    const resendIn = bookingOtp.resendAvailableAt - now;
+    $('#booking-otp-expiry-timer').textContent = formatCountdown(expiresIn);
+    $('#booking-otp-resend-button').disabled = resendIn > 0 || bookingOtp.busy || expiresIn <= 0;
+    $('#booking-otp-resend-timer').textContent = expiresIn <= 0
+        ? 'This code has expired. Close this panel and select the seats again.'
+        : resendIn > 0 ? `You can resend in ${formatCountdown(resendIn)}.` : 'You can request a new code.';
+    $('#booking-otp-verify-button').disabled = bookingOtp.busy || expiresIn <= 0;
+    if (expiresIn <= 0) {
+        clearInterval(bookingOtpTimer);
+        $('#booking-otp-status').textContent = 'The verification window has expired.';
+    }
+}
+
+function startBookingOtpTimer() {
+    clearInterval(bookingOtpTimer);
+    bookingOtpTimer = setInterval(updateBookingOtpTimers, 1000);
+}
+
+function closeBookingOtp() {
+    clearInterval(bookingOtpTimer);
+    bookingOtpTimer = undefined;
+    bookingOtp = undefined;
+    $('#booking-otp-panel')?.classList.add('hidden');
+}
+
+function storeBookingChallenge(challenge) {
+    bookingOtp = {
+        bookingId: challenge.booking.bookingId,
+        challengeToken: challenge.challengeToken,
+        destination: challenge.destination,
+        expiresAt: parseServerTimestamp(challenge.expiresAt, Date.now() + 5 * 60 * 1000),
+        resendAvailableAt: parseServerTimestamp(challenge.resendAvailableAt, Date.now() + 60 * 1000),
+        booking: challenge.booking,
+        busy: false
+    };
+    renderBookingOtp();
+    startBookingOtpTimer();
 }
 
 function renderAccountPanel(user) {
@@ -390,25 +515,60 @@ async function bookSelectedSeats() {
             })
         };
 
-        const response = await request('/bookings', {
+        const challenge = await request('/bookings/otp/request', {
             method: 'POST',
             body: JSON.stringify(bookingRequest)
         });
-
-        showNotice(`Booking confirmed! Booking ID: ${response.bookingId}`, false);
-        
-        // Immediately refresh seat map to show updated status
-        await renderSeats(selectedShow.showId, true);
-        
-        // Refresh user wallet
-        await refreshCurrentUser();
-        
-        // Reset and show bookings
-        stopSeatRefresh();
-        loadBookings();
-        $('#details-panel').classList.add('hidden');
+        storeBookingChallenge(challenge);
     } catch (error) {
         showNotice(error.message, true);
+    }
+}
+
+async function submitBookingOtp(event) {
+    event.preventDefault();
+    if (!bookingOtp) return;
+    const code = $('#booking-otp-code').value.trim();
+    if (!/^\d{6}$/.test(code)) {
+        $('#booking-otp-status').textContent = 'Enter the six-digit verification code.';
+        return;
+    }
+    bookingOtp.busy = true;
+    updateBookingOtpTimers();
+    try {
+        const response = await request(`/bookings/${bookingOtp.bookingId}/otp/verify`, {
+            method: 'POST',
+            body: JSON.stringify({ challengeToken: bookingOtp.challengeToken, code })
+        });
+        closeBookingOtp();
+        showNotice(`Booking confirmed! Booking ID: ${response.bookingId}`, false);
+        await renderSeats(selectedShow.showId, true);
+        await refreshCurrentUser();
+        stopSeatRefresh();
+        await loadBookings();
+        $('#details-panel').classList.add('hidden');
+    } catch (error) {
+        if (bookingOtp) {
+            bookingOtp.busy = false;
+            $('#booking-otp-status').textContent = error.message;
+            updateBookingOtpTimers();
+        }
+    }
+}
+
+async function resendBookingOtp() {
+    if (!bookingOtp || bookingOtp.busy) return;
+    bookingOtp.busy = true;
+    updateBookingOtpTimers();
+    try {
+        const challenge = await request(`/bookings/${bookingOtp.bookingId}/otp/resend`, {
+            method: 'POST', body: '{}'
+        });
+        storeBookingChallenge(challenge);
+    } catch (error) {
+        bookingOtp.busy = false;
+        $('#booking-otp-status').textContent = error.message;
+        updateBookingOtpTimers();
     }
 }
 
@@ -671,19 +831,58 @@ async function deleteScreen(id) { if (!confirm('Delete this screen? Its shows mu
 async function cancelBooking(bookingId) {
     if (!confirm('Are you sure you want to cancel this booking?')) return;
     try {
-        await request(`/bookings/${bookingId}/cancel`, { method: 'POST', body: '{}' });
+        const challenge = await request(`/bookings/${bookingId}/cancel/otp/request`, {
+            method: 'POST', body: '{}'
+        });
+        storeCancellationChallenge(bookingId, challenge);
+    } catch (error) {
+        showNotice(error.message, true);
+    }
+}
+
+async function submitCancellationOtp(event) {
+    event.preventDefault();
+    if (!cancellationOtp) return;
+    const code = $('#cancellation-otp-code').value.trim();
+    if (!/^\d{6}$/.test(code)) {
+        $('#otp-status').textContent = 'Enter the six-digit verification code.';
+        return;
+    }
+    cancellationOtp.busy = true;
+    updateCancellationOtpTimers();
+    try {
+        await request(`/bookings/${cancellationOtp.bookingId}/cancel/otp/verify`, {
+            method: 'POST',
+            body: JSON.stringify({ challengeToken: cancellationOtp.challengeToken, code })
+        });
+        const bookingId = cancellationOtp.bookingId;
+        closeCancellationOtp();
         showNotice(`Booking #${bookingId} cancelled and refunded according to policy.`, false);
-        
-        // Refresh seat map if it's open to show released seats
-        if (selectedShow?.showId) {
-            await renderSeats(selectedShow.showId);
-        }
-        
-        // Refresh user bookings and wallet
+        if (selectedShow?.showId) await renderSeats(selectedShow.showId);
         await refreshCurrentUser();
         await loadBookings();
     } catch (error) {
-        showNotice(error.message, true);
+        if (cancellationOtp) {
+            cancellationOtp.busy = false;
+            $('#otp-status').textContent = error.message;
+            updateCancellationOtpTimers();
+        }
+    }
+}
+
+async function resendCancellationOtp() {
+    if (!cancellationOtp || cancellationOtp.busy) return;
+    cancellationOtp.busy = true;
+    updateCancellationOtpTimers();
+    try {
+        const challenge = await request(`/bookings/${cancellationOtp.bookingId}/cancel/otp/resend`, {
+            method: 'POST', body: '{}'
+        });
+        storeCancellationChallenge(cancellationOtp.bookingId, challenge);
+    } catch (error) {
+        cancellationOtp.busy = false;
+        $('#otp-status').textContent = error.message;
+        updateCancellationOtpTimers();
     }
 }
 
@@ -691,6 +890,7 @@ document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.addEventListe
     authMode = tab.dataset.authMode;
     document.querySelectorAll('[data-auth-mode]').forEach((item) => item.classList.toggle('active', item === tab));
     $('#name-field').classList.toggle('hidden', authMode === 'login');
+    $('#phone-field').classList.toggle('hidden', authMode === 'login');
     $('#registration-role').classList.toggle('hidden', authMode !== 'register');
     $('#admin-key-field').classList.toggle('hidden', authMode !== 'register' || registrationRole !== 'ADMIN');
     $('#admin-key').required = authMode === 'register' && registrationRole === 'ADMIN';
@@ -713,13 +913,19 @@ $('#refresh-wallet-button').addEventListener('click', async () => {
 });
 $('#refresh-button').addEventListener('click', async () => { await loadMovies(); if (selectedShow) { try { await renderSeats(selectedShow.showId); } catch (error) { showNotice(error.message, true); } } });
 $('#close-details').addEventListener('click', () => { $('#details-panel').classList.add('hidden'); stopSeatRefresh(); });
+$('#booking-otp-form').addEventListener('submit', submitBookingOtp);
+$('#booking-otp-resend-button').addEventListener('click', resendBookingOtp);
+$('#booking-otp-close-button').addEventListener('click', closeBookingOtp);
+$('#cancellation-otp-form').addEventListener('submit', submitCancellationOtp);
+$('#otp-resend-button').addEventListener('click', resendCancellationOtp);
+$('#otp-close-button').addEventListener('click', closeCancellationOtp);
 $('#auth-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
         const email = $('#email').value;
         const password = $('#password').value;
         if (authMode === 'register') {
-            const payload = { name: $('#name').value, email, password, role: registrationRole };
+            const payload = { name: $('#name').value, email, phoneNumber: $('#phone-number').value, password, role: registrationRole };
             if (registrationRole === 'ADMIN') payload.adminKey = $('#admin-key').value;
             await request(registrationRole === 'ADMIN' ? '/auth/register-admin' : '/auth/register', {
                 method: 'POST',
@@ -732,6 +938,10 @@ $('#auth-form').addEventListener('submit', async (event) => {
         event.target.reset();
     } catch (error) { showNotice(error.message, true); }
 });
+$('#google-sign-in').addEventListener('click', () => { window.location.href = `${api}/auth/google/start`; });
+$('#twitter-sign-in').addEventListener('click', () => { window.location.href = `${api}/auth/twitter/start`; });
+$('#link-google-button').addEventListener('click', () => { window.location.href = `${api}/auth/google/link/start`; });
+$('#link-twitter-button').addEventListener('click', () => { window.location.href = `${api}/auth/twitter/link/start`; });
 $('#theatre-form').addEventListener('submit', saveTheatre);
 $('#screen-form').addEventListener('submit', saveScreen);
 $('#show-form').addEventListener('submit', saveShow);
@@ -744,3 +954,12 @@ $('#cancel-show').addEventListener('click', () => hideForm('show-form'));
 
 loadMovies();
 request('/auth/me').then(setLoggedIn).catch(() => setLoggedOut());
+
+const oauthError = new URLSearchParams(window.location.search).get('oauth_error');
+if (oauthError === 'account_conflict') {
+    showNotice('That provider is linked to another account. Log in first, then link it from your account.', true);
+} else if (oauthError === 'oauth_denied') {
+    showNotice('Social sign-in was cancelled. Please try again when ready.', true);
+} else if (oauthError === 'oauth_failed') {
+    showNotice('Social sign-in could not be completed. Please try again.', true);
+}

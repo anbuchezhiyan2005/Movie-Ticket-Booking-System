@@ -42,7 +42,7 @@ public class OAuthStateService {
                 userId,
                 randomToken(32),
                 randomToken(32),
-            randomToken(32),
+                randomToken(32),
                 redirectUri,
                 Instant.now());
         HttpSession session = request.getSession(true);

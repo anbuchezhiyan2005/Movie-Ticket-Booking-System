@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: repository.ShowSeatRepositoryIntegrationTest
 -------------------------------------------------------------------------------
-Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 46.39 s -- in repository.ShowSeatRepositoryIntegrationTest
+Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 46.11 s -- in repository.ShowSeatRepositoryIntegrationTest

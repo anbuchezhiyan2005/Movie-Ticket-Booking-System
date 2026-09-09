@@ -173,7 +173,6 @@ public class BookingService {
 
     public BookingResponse confirmHeldBookingWithOtp(Long bookingId, Long customerId,
                                                      String challengeToken, String code) throws SQLException {
-        // OTP consumption and payment must commit or roll back together.
         BookingResult result = Database.inTransaction(() -> {
             if (!otpService.verifyCodeInTransaction(challengeToken, customerId, bookingId,
                     enums.OtpPurpose.BOOKING, code)) {
@@ -248,7 +247,6 @@ public class BookingService {
 
     public void cancelBookingWithOtp(Long bookingId, Long customerId,
                                      String challengeToken, String code) throws SQLException {
-        // Refund, seat release, status, and OTP consumption share one transaction.
         Boolean cancelled = Database.inTransaction(() -> {
             if (!otpService.verifyCodeInTransaction(challengeToken, customerId, bookingId,
                     enums.OtpPurpose.CANCELLATION, code)) {
