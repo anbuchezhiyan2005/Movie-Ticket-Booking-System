@@ -98,13 +98,7 @@ public class OAuthProviderService {
                 + " codeVerifierPresent=" + (transaction.codeVerifier() != null)
                 + " clientSecretPresent=" + (configuration.clientSecret() != null));
         }
-        Map<String, String> tokenValues = form(
-                "code", code,
-                "redirect_uri", transaction.redirectUri(),
-                "grant_type", "authorization_code",
-            "code_verifier", transaction.codeVerifier());
-        JsonNode token = postForm(configuration.tokenEndpoint(), tokenValues,
-            expectedProvider == AuthProvider.TWITTER ? configuration : null);
+        JsonNode token = exchangeToken(expectedProvider, configuration, transaction, code);
         if (expectedProvider == AuthProvider.TWITTER) {
             LOGGER.info("Twitter token response"
                     + " token_type=" + redactedField(token, "token_type")
@@ -196,6 +190,21 @@ public class OAuthProviderService {
                 requiredText(data, "id"),
                 null,
                 firstNonBlank(text(data, "name"), text(data, "username")));
+    }
+
+    private JsonNode exchangeToken(AuthProvider provider, OAuthConfiguration.Provider configuration,
+                                   OAuthStateService.Transaction transaction, String code) {
+        Map<String, String> tokenValues = form(
+                "code", code,
+                "redirect_uri", transaction.redirectUri(),
+                "grant_type", "authorization_code",
+                "code_verifier", transaction.codeVerifier());
+        if (provider == AuthProvider.GOOGLE) {
+            tokenValues.put("client_id", configuration.clientId());
+            tokenValues.put("client_secret", configuration.clientSecret());
+            return postForm(configuration.tokenEndpoint(), tokenValues, null);
+        }
+        return postForm(configuration.tokenEndpoint(), tokenValues, configuration);
     }
 
     private JsonNode postForm(String endpoint, Map<String, String> values,

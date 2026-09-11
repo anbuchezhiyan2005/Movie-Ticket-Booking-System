@@ -38,8 +38,7 @@ public class BookingExpiryScheduler {
             try {
                 runOnce();
             } catch (SQLException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
+                LOGGER.log(Level.WARNING, "Pending booking expiry failed", e);
             }
         }, INTERVAL_SECONDS, INTERVAL_SECONDS, TimeUnit.SECONDS);
     }

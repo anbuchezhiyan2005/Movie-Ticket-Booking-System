@@ -62,6 +62,7 @@ public class BookingService {
     private final ScreenRepository screenRepository;
     private final TheatreRepository theatreRepository;
     private final ShowSeatRepository showSeatRepository;
+    private final OtpChallengeRepository otpChallengeRepository;
     private final PaymentService paymentService;
     private final SeatAvailabilityCache seatAvailabilityCache;
     private final ConfirmationEmailService confirmationEmailService;
@@ -77,6 +78,7 @@ public class BookingService {
             ScreenRepository screenRepository,
             TheatreRepository theatreRepository,
             ShowSeatRepository showSeatRepository,
+            OtpChallengeRepository otpChallengeRepository,
             PaymentService paymentService,
             SeatAvailabilityCache seatAvailabilityCache,
             ConfirmationEmailService confirmationEmailService,
@@ -89,6 +91,7 @@ public class BookingService {
         this.screenRepository = screenRepository;
         this.theatreRepository = theatreRepository;
         this.showSeatRepository = showSeatRepository;
+        this.otpChallengeRepository = otpChallengeRepository;
         this.paymentService = paymentService;
         this.seatAvailabilityCache = seatAvailabilityCache;
         this.confirmationEmailService = confirmationEmailService;
@@ -108,7 +111,8 @@ public class BookingService {
             SeatAvailabilityCache seatAvailabilityCache,
             ConfirmationEmailService confirmationEmailService) {
         this(bookingRepository, userRepository, showRepository, movieRepository, screenRepository,
-                theatreRepository, showSeatRepository, paymentService, seatAvailabilityCache,
+            theatreRepository, showSeatRepository, new OtpChallengeRepository(), paymentService,
+            seatAvailabilityCache,
             confirmationEmailService, new GateTokenService(new BookingGateTokenRepository()),
             new OtpService(new OtpChallengeRepository()));
     }
@@ -319,6 +323,8 @@ public class BookingService {
             for (Booking booking : expired) {
                 List<ShowSeat> expiredSeats = showSeatRepository.findByBookingId(booking.getBookingId());
                 showSeatRepository.deleteByBookingId(booking.getBookingId());
+                otpChallengeRepository.invalidateActiveByBookingId(
+                    booking.getBookingId(), LocalDateTime.now());
                 booking.setStatus(BookingStatus.EXPIRED);
                 booking.setExpiresAt(null);
                 bookingRepository.update(booking);

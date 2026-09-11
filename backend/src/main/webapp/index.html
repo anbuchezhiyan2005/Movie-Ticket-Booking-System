@@ -57,12 +57,12 @@
         <form id="auth-form">
             <label id="name-field" class="field hidden">Name<input id="name" type="text" autocomplete="name"></label>
             <label class="field">Email<input id="email" type="email" required autocomplete="email"></label>
-            <label id="phone-field" class="field hidden">Phone number<input id="phone-number" type="tel" inputmode="tel" autocomplete="tel" placeholder="+14155552671" pattern="\\+[1-9][0-9]{7,14}"></label>
+            <label id="phone-field" class="field hidden">Phone number<input id="phone-number" type="tel" inputmode="tel" autocomplete="tel" placeholder="+14155552671" pattern="[+][1-9][0-9]{7,14}"></label>
             <label class="field">Password<input id="password" type="password" required minlength="6" autocomplete="current-password"></label>
             <label id="admin-key-field" class="field hidden">Admin access code<input id="admin-key" type="password" autocomplete="off"></label>
             <button class="button button-primary" type="submit"><span id="auth-submit-label">Log in</span><span aria-hidden="true">&#8594;</span></button>
         </form>
-        <div class="social-auth" aria-label="Social sign in">
+        <div id="social-auth" class="social-auth" aria-label="Social sign in">
             <button id="google-sign-in" class="button button-quiet" type="button">Continue with Google</button>
             <button id="twitter-sign-in" class="button button-quiet" type="button">Continue with Twitter</button>
         </div>

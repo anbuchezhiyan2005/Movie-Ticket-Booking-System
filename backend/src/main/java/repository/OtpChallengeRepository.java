@@ -97,6 +97,19 @@ public class OtpChallengeRepository extends JdbcSupport {
         });
     }
 
+    public void invalidateActiveByBookingId(Long bookingId, LocalDateTime invalidatedAt) {
+        execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE otp_challenges SET consumed_at = ? "
+                            + "WHERE booking_id = ? AND consumed_at IS NULL")) {
+                statement.setTimestamp(1, Timestamp.valueOf(invalidatedAt));
+                statement.setLong(2, bookingId);
+                statement.executeUpdate();
+                return null;
+            }
+        });
+    }
+
     public void incrementAttempts(Long id) {
         execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(

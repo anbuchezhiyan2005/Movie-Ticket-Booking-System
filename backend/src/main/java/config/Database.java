@@ -59,7 +59,11 @@ public final class Database {
 
     // Opens a new database connection
     public static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(url, user, password);
+        Connection connection = DriverManager.getConnection(url, user, password);
+        try (var statement = connection.createStatement()) {
+            statement.execute("SET time_zone = '+00:00'");
+        }
+        return connection;
     }
 
     // Returns the current active connection (transaction connection if in transaction, otherwise opens a new one)

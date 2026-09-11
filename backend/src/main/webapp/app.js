@@ -893,6 +893,7 @@ document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.addEventListe
     $('#phone-field').classList.toggle('hidden', authMode === 'login');
     $('#registration-role').classList.toggle('hidden', authMode !== 'register');
     $('#admin-key-field').classList.toggle('hidden', authMode !== 'register' || registrationRole !== 'ADMIN');
+    $('#social-auth').classList.toggle('hidden', authMode === 'register' && registrationRole === 'ADMIN');
     $('#admin-key').required = authMode === 'register' && registrationRole === 'ADMIN';
     $('#auth-submit-label').textContent = authMode === 'login' ? 'Log in' : 'Create account';
     $('#password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
@@ -902,6 +903,7 @@ document.querySelectorAll('[data-register-role]').forEach((tab) => tab.addEventL
     registrationRole = tab.dataset.registerRole;
     document.querySelectorAll('[data-register-role]').forEach((item) => item.classList.toggle('active', item === tab));
     $('#admin-key-field').classList.toggle('hidden', registrationRole !== 'ADMIN');
+    $('#social-auth').classList.toggle('hidden', registrationRole === 'ADMIN');
     $('#admin-key').required = registrationRole === 'ADMIN';
 }));
 

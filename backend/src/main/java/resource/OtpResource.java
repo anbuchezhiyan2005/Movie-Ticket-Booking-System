@@ -1,8 +1,8 @@
 package resource;
 
+import dto.response.BookingOtpResponse;
 import dto.request.OtpVerifyRequest;
 import dto.request.BookingRequest;
-import dto.response.BookingOtpResponse;
 import dto.response.BookingResponse;
 import dto.response.OtpChallengeResponse;
 import enums.OtpPurpose;
@@ -21,6 +21,7 @@ import service.AuthService;
 import service.BookingService;
 import service.OtpEmailService;
 import service.OtpService;
+import config.EnvironmentConfig;
 import util.RequestUsers;
 
 import java.util.logging.Logger;
@@ -55,9 +56,9 @@ public class OtpResource {
         BookingResponse booking = bookingService.holdTickets(userId, body);
         try {
             OtpService.Challenge challenge = otpService.create(userId, booking.getBookingId(), OtpPurpose.BOOKING);
-            otpEmailService.send(user.getEmail(), challenge.code(), "booking confirmation");
-                return new BookingOtpResponse(booking, challenge.token(), mask(user.getEmail()),
-                    challenge.expiresAt(), challenge.resendAvailableAt());
+            deliverOtp(user.getEmail(), challenge.code(), "booking confirmation");
+            return new BookingOtpResponse(booking, challenge.token(), mask(user.getEmail()),
+                    challenge.expiresAt(), challenge.resendAvailableAt(), simulationOtp(challenge));
         } catch (RuntimeException error) {
             LOGGER.warning("Booking OTP email failed; releasing booking hold bookingId=" + booking.getBookingId());
             bookingService.expireBookingHold(booking.getBookingId(), userId);
@@ -83,9 +84,10 @@ public class OtpResource {
         Long userId = RequestUsers.requireCustomer(request);
         User user = authService.getById(userId);
         OtpService.Challenge challenge = otpService.resend(userId, bookingId, OtpPurpose.BOOKING);
-        otpEmailService.send(user.getEmail(), challenge.code(), "booking confirmation");
+        deliverOtp(user.getEmail(), challenge.code(), "booking confirmation");
         return new BookingOtpResponse(bookingService.getBooking(bookingId, userId),
-            challenge.token(), mask(user.getEmail()), challenge.expiresAt(), challenge.resendAvailableAt());
+            challenge.token(), mask(user.getEmail()), challenge.expiresAt(),
+            challenge.resendAvailableAt(), simulationOtp(challenge));
     }
 
     @POST
@@ -96,9 +98,9 @@ public class OtpResource {
         User user = authService.getById(userId);
         bookingService.validateCancellation(bookingId, userId);
         OtpService.Challenge challenge = otpService.create(userId, bookingId, OtpPurpose.CANCELLATION);
-        otpEmailService.send(user.getEmail(), challenge.code(), "booking cancellation");
+        deliverOtp(user.getEmail(), challenge.code(), "booking cancellation");
         return new OtpChallengeResponse(challenge.id(), challenge.token(), mask(user.getEmail()),
-            challenge.expiresAt(), challenge.resendAvailableAt());
+            challenge.expiresAt(), challenge.resendAvailableAt(), simulationOtp(challenge));
     }
 
     @POST
@@ -121,9 +123,25 @@ public class OtpResource {
         User user = authService.getById(userId);
         bookingService.validateCancellation(bookingId, userId);
         OtpService.Challenge challenge = otpService.resend(userId, bookingId, OtpPurpose.CANCELLATION);
-        otpEmailService.send(user.getEmail(), challenge.code(), "booking cancellation");
+        deliverOtp(user.getEmail(), challenge.code(), "booking cancellation");
         return new OtpChallengeResponse(challenge.id(), challenge.token(),
-            mask(user.getEmail()), challenge.expiresAt(), challenge.resendAvailableAt());
+            mask(user.getEmail()), challenge.expiresAt(), challenge.resendAvailableAt(),
+            simulationOtp(challenge));
+    }
+
+    private void deliverOtp(String email, String code, String purpose) {
+        if (!simulationMode()) {
+            otpEmailService.send(email, code, purpose);
+        }
+    }
+
+    private String simulationOtp(OtpService.Challenge challenge) {
+        return simulationMode() ? challenge.code() : null;
+    }
+
+    private boolean simulationMode() {
+        return "SIMULATION".equalsIgnoreCase(
+                EnvironmentConfig.get("OTP_DELIVERY_MODE", "SMTP"));
     }
 
     private String mask(String email) {
