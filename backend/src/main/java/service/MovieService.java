@@ -12,7 +12,6 @@ import repository.MovieRepository;
 import repository.TheatreRepository;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Singleton
 public class MovieService {
@@ -28,8 +27,8 @@ public class MovieService {
 
     public List<MovieResponse> browseMovies() {
         return movieRepository.findAll().stream()
-                .map(this::toMovieResponse)
-                .collect(Collectors.toList());
+                .map(movie -> this.toMovieResponse(movie))
+                .toList();
     }
 
     public MovieDetailsResponse getMovieDetails(Long movieId) {
@@ -40,8 +39,8 @@ public class MovieService {
     public List<TheatreResponse> getTheatresShowingMovie(Long movieId) {
         getMovie(movieId);
         return theatreRepository.findByMovieId(movieId).stream()
-                .map(this::toTheatreResponse)
-                .collect(Collectors.toList());
+                .map(theatre -> this.toTheatreResponse(theatre))
+                .toList();
     }
 
     public Movie getMovie(Long movieId) {

@@ -13,6 +13,9 @@ import java.util.Properties;
 
 public final class Database {
 
+    private static final int DEADLOCK_RETRY_LIMIT = 3;
+    private static final long DEADLOCK_RETRY_DELAY_MILLIS = 50L;
+
     // ThreadLocal to hold active transaction connection per thread
     private static final ThreadLocal<Connection> TX = new ThreadLocal<>();
     private static String url;
@@ -130,6 +133,36 @@ public final class Database {
                 throw new IllegalStateException("Could not close transaction connection", e);
             }
         }
+    }
+
+    public static <T> T inTransactionWithDeadlockRetry(Work<T> work) throws SQLException {
+        for (int attempt = 1; attempt <= DEADLOCK_RETRY_LIMIT; attempt++) {
+            try {
+                return inTransaction(work);
+            } catch (RuntimeException error) {
+                if (!isDeadlock(error) || attempt == DEADLOCK_RETRY_LIMIT) {
+                    throw error;
+                }
+                try {
+                    Thread.sleep(DEADLOCK_RETRY_DELAY_MILLIS * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw error;
+                }
+            }
+        }
+        throw new IllegalStateException("Deadlock retry limit exceeded");
+    }
+
+    private static boolean isDeadlock(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SQLException sqlException && sqlException.getErrorCode() == 1213) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     @FunctionalInterface

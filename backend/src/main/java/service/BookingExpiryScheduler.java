@@ -17,7 +17,7 @@ import java.util.logging.Logger;
 public class BookingExpiryScheduler {
 
     private static final Logger LOGGER = Logger.getLogger(BookingExpiryScheduler.class.getName());
-    private static final long INTERVAL_SECONDS = 30;
+    private static final long DEFAULT_INTERVAL_SECONDS = 30;
 
     private final BookingService bookingService;
     private ScheduledExecutorService executor;
@@ -29,6 +29,16 @@ public class BookingExpiryScheduler {
 
     // Starts the background scheduler task
     public void start() {
+        long intervalSeconds = Long.getLong(
+            "booking.expiry.interval.seconds",
+            DEFAULT_INTERVAL_SECONDS
+        );
+        if (intervalSeconds <= 0) {
+            throw new IllegalArgumentException(
+                "booking.expiry.interval.seconds must be positive"
+            );
+        }
+
         executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "booking-expiry");
             thread.setDaemon(true);
@@ -40,7 +50,9 @@ public class BookingExpiryScheduler {
             } catch (SQLException e) {
                 LOGGER.log(Level.WARNING, "Pending booking expiry failed", e);
             }
-        }, INTERVAL_SECONDS, INTERVAL_SECONDS, TimeUnit.SECONDS);
+        }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+        LOGGER.info(() -> "Booking expiry scheduler started intervalSeconds="
+            + intervalSeconds);
     }
 
     // Stops the background scheduler

@@ -74,6 +74,7 @@ public final class RequestUsers {
         session.setAttribute(CSRF_TOKEN, generateSecureToken());
     }
 
+    // Retrieves the current user's CSRF token from the session
     public static String requireCsrfToken(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null) {
@@ -84,10 +85,7 @@ public final class RequestUsers {
     }
 
     public static String issueCsrfToken(HttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        if (session == null) {
-            session = request.getSession(true);
-        }
+        HttpSession session = request.getSession(true);
         String token = generateSecureToken();
         session.setAttribute(CSRF_TOKEN, token);
         return token;

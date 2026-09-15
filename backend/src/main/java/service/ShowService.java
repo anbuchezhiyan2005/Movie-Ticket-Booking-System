@@ -103,15 +103,15 @@ public class ShowService {
     public List<ShowResponse> getShowsForMovie(Long movieId) {
         getMovie(movieId);
         return showRepository.findByMovieId(movieId).stream()
-                .map(this::toShowResponse)
-                .collect(Collectors.toList());
+                .map(show -> this.toShowResponse(show))
+                .toList();
     }
 
     public List<ShowResponse> getShowsForScreen(Long screenId) {
         getScreen(screenId);
         return showRepository.findByScreenId(screenId).stream()
-                .map(this::toShowResponse)
-                .collect(Collectors.toList());
+                .map(show -> this.toShowResponse(show))
+                .toList();
     }
 
     public List<ShowResponse> getShowsForTheatre(Long theatreId, Long adminId) {
@@ -120,9 +120,9 @@ public class ShowService {
 
         return screenRepository.findByTheatreId(theatreId).stream()
                 .flatMap(screen -> showRepository.findByScreenId(screen.getScreenId()).stream())
-                .filter(this::hasNotEnded)
-                .map(this::toShowResponse)
-                .collect(Collectors.toList());
+                .filter(show -> this.hasNotEnded(show))
+                .map(show -> this.toShowResponse(show))
+                .toList();
     }
 
     public List<ShowResponse> getShowsForScreen(Long screenId, Long adminId) {
@@ -131,9 +131,9 @@ public class ShowService {
         verifyOwnership(theatre, adminId);
 
         return showRepository.findByScreenId(screenId).stream()
-                .filter(this::hasNotEnded)
-                .map(this::toShowResponse)
-                .collect(Collectors.toList());
+                .filter(show -> this.hasNotEnded(show))
+                .map(show -> this.toShowResponse(show))
+                .toList();
     }
 
     private boolean hasNotEnded(Show show) {
