@@ -20,3 +20,10 @@ simulator-truststore.p12
 hs_err_pid*
 
 *.gitignore
+
+# Simulation files
+CustomerSimulation.java
+Simulation.java
+
+evil-page.html
+simulation.ps1
