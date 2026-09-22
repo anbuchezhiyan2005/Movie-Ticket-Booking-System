@@ -1,7 +1,7 @@
 package resource;
 
 import dto.request.ShowRequest;
-import dto.response.SeatResponse;
+import dto.response.SeatMapResponse;
 import dto.response.ShowResponse;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
@@ -70,7 +70,7 @@ public class ShowResource {
 
     @GET
     @Path("/shows/{id}/seats")
-    public List<SeatResponse> seats(@PathParam("id") Long showId) {
+    public SeatMapResponse seats(@PathParam("id") Long showId) {
         return bookingService.getAvailableSeats(showId);
     }
 

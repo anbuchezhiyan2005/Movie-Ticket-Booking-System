@@ -13,6 +13,12 @@ public class BookingResponse {
     private Long bookingId;
     private Long showId;
     private BookingStatus status;
+    private String movieName;
+    private LocalDateTime showStartTime;
+    private int durationMinutes;
+    private String screenName;
+    private String theatreName;
+    private String theatreLocation;
     private int totalAmount;
     private LocalDateTime bookingTime;
     private List<SeatResponse> seats;
@@ -39,6 +45,54 @@ public class BookingResponse {
 
     public void setStatus(BookingStatus status) {
         this.status = status;
+    }
+
+    public String getMovieName() {
+        return movieName;
+    }
+
+    public void setMovieName(String movieName) {
+        this.movieName = movieName;
+    }
+
+    public LocalDateTime getShowStartTime() {
+        return showStartTime;
+    }
+
+    public void setShowStartTime(LocalDateTime showStartTime) {
+        this.showStartTime = showStartTime;
+    }
+
+    public int getDurationMinutes() {
+        return durationMinutes;
+    }
+
+    public void setDurationMinutes(int durationMinutes) {
+        this.durationMinutes = durationMinutes;
+    }
+
+    public String getScreenName() {
+        return screenName;
+    }
+
+    public void setScreenName(String screenName) {
+        this.screenName = screenName;
+    }
+
+    public String getTheatreName() {
+        return theatreName;
+    }
+
+    public void setTheatreName(String theatreName) {
+        this.theatreName = theatreName;
+    }
+
+    public String getTheatreLocation() {
+        return theatreLocation;
+    }
+
+    public void setTheatreLocation(String theatreLocation) {
+        this.theatreLocation = theatreLocation;
     }
 
     public int getTotalAmount() {

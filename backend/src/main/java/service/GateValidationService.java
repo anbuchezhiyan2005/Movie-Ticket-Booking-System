@@ -5,9 +5,14 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import repository.BookingGateTokenRepository;
 import util.HmacUtil;
+import util.RequestLogContext;
+
+import java.util.logging.Logger;
 
 @Singleton
 public class GateValidationService {
+
+    private static final Logger LOGGER = Logger.getLogger(GateValidationService.class.getName());
 
     private final BookingGateTokenRepository tokenRepository;
     private final String hmacSecret;
@@ -20,17 +25,24 @@ public class GateValidationService {
 
     public ValidationResult redeem(String token, String signature, String deviceId) {
         if (token == null || token.isBlank() || !HmacUtil.verify("t=" + token, signature, hmacSecret)) {
+            LOGGER.warning("event=gate.ticket.rejected requestId=" + RequestLogContext.requestId()
+                    + " reason=invalid_token");
             return ValidationResult.rejected(Reason.INVALID_TOKEN, "Ticket QR code is invalid.");
         }
 
         String tokenHash = HmacUtil.sha256(token);
         if (tokenRepository.consume(tokenHash, deviceId)) {
+            LOGGER.info("event=gate.ticket.redeemed requestId=" + RequestLogContext.requestId()
+                + " outcome=success");
             return ValidationResult.success();
         }
 
-        return tokenRepository.findReason(tokenHash)
-                .map(reason -> ValidationResult.rejected(toReason(reason), toReason(reason).message))
-                .orElseGet(() -> ValidationResult.rejected(Reason.INVALID_TOKEN, "Ticket QR code is invalid."));
+        ValidationResult result = tokenRepository.findReason(tokenHash)
+            .map(reason -> ValidationResult.rejected(toReason(reason), toReason(reason).message))
+            .orElseGet(() -> ValidationResult.rejected(Reason.INVALID_TOKEN, "Ticket QR code is invalid."));
+        LOGGER.warning("event=gate.ticket.rejected requestId=" + RequestLogContext.requestId()
+            + " reason=" + result.reason());
+        return result;
     }
 
     private Reason toReason(BookingGateTokenRepository.Rejection rejection) {

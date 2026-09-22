@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -74,6 +75,31 @@ public class ShowRepository extends JdbcSupport {
                 ps.setLong(1, screenId);
                 try (ResultSet rs = ps.executeQuery()) {
                     return mapList(rs);
+                }
+            }
+        });
+    }
+
+    public boolean existsUnfinishedShowOnScreen(Long screenId, LocalDateTime now) {
+        return execute(connection -> {
+            String sql = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM shows s
+                        JOIN movies m ON m.movie_id = s.movie_id
+                        WHERE s.screen_id = ?
+                          AND DATE_ADD(
+                                s.start_time,
+                                INTERVAL m.duration_minutes MINUTE
+                              ) > ?
+                    )
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, screenId);
+                ps.setTimestamp(2, Timestamp.valueOf(now));
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    return rs.getBoolean(1);
                 }
             }
         });

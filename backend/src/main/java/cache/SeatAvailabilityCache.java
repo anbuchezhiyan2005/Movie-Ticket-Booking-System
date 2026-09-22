@@ -1,56 +1,41 @@
 package cache;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Thread-safe in-memory cache for seat availability per show.
- * Stores seat occupancy with automatic TTL-based expiration and cleanup.
- * Supports surgical updates (add/remove individual seats) for efficiency.
+ * Entries expire lazily after five seconds.
  */
 public class SeatAvailabilityCache {
-    private static final Logger LOGGER = Logger.getLogger(SeatAvailabilityCache.class.getName());
-    private static final long CLEANUP_INTERVAL_SECONDS = 5;
-    private static final long HOLD_TTL_MILLIS = 5 * 60 * 1000L;
+     private static final long TTL_MILLIS = 5_000L;
 
-    private final ConcurrentHashMap<Long, CachedShowSeats> cache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, ConcurrentHashMap<String, Long>> activeHolds = new ConcurrentHashMap<>();
-    private ScheduledExecutorService cleanupExecutor;
+     private final ConcurrentHashMap<Long, CacheEntry> cache = new ConcurrentHashMap<>();
 
     /**
      * Retrieve cached seat availability if valid and not expired.
      * Returns null if cache miss or expired.
      */
-    public CachedShowSeats get(Long showId) {
-        CachedShowSeats cached = cache.get(showId);
-        if (cached != null && !cached.isExpired()) {
-            mergeActiveHolds(showId, cached);
-            return cached;
+    public Map<String, String> get(Long showId) {
+        CacheEntry entry = cache.get(showId);
+        if (entry == null) {
+            return null;
         }
-        // Lazily remove expired entries on access
-        if (cached != null && cached.isExpired()) {
-            cache.remove(showId);
+        if (entry.isExpired()) {
+            cache.remove(showId, entry);
+            return null;
         }
-        return null;
+        return entry.occupiedSeats;
     }
 
     /**
      * Store or update cached seat availability.
      */
-    public CachedShowSeats put(Long showId, CachedShowSeats cachedSeats) {
-        CachedShowSeats merged = cache.compute(showId, (id, existing) -> {
-            if (existing != null && !existing.isExpired()) {
-                existing.getOccupiedSeats().putAll(cachedSeats.getOccupiedSeats());
-                return existing;
-            }
-            return cachedSeats;
-        });
-        mergeActiveHolds(showId, merged);
-        return merged;
+    public Map<String, String> put(Long showId, Map<String, String> occupiedSeats) {
+        CacheEntry entry = new CacheEntry(occupiedSeats);
+        cache.put(showId, entry);
+        return entry.occupiedSeats;
     }
 
     /**
@@ -60,19 +45,10 @@ public class SeatAvailabilityCache {
         cache.remove(showId);
     }
 
-    /**
-     * Add a single seat to cache (surgical update on booking confirmation).
-     */
-    public void addSeat(Long showId, String seatKey, CachedShowSeats.SeatStatus status) {
-        if (status == CachedShowSeats.SeatStatus.HELD) {
-            activeHolds.computeIfAbsent(showId, ignored -> new ConcurrentHashMap<>())
-                    .put(seatKey, System.currentTimeMillis() + HOLD_TTL_MILLIS);
-        } else {
-            removeActiveHold(showId, seatKey);
-        }
-        CachedShowSeats cached = cache.get(showId);
-        if (cached != null && !cached.isExpired()) {
-            cached.addSeat(seatKey, status);
+    public void updateSeat(Long showId, String seatKey, String status) {
+        CacheEntry entry = liveEntry(showId);
+        if (entry != null) {
+            entry.occupiedSeats.put(seatKey, status);
         }
     }
 
@@ -80,77 +56,21 @@ public class SeatAvailabilityCache {
      * Remove a single seat from cache (surgical update on cancellation/expiry).
      */
     public void removeSeat(Long showId, String seatKey) {
-        removeActiveHold(showId, seatKey);
-        CachedShowSeats cached = cache.get(showId);
-        if (cached != null && !cached.isExpired()) {
-            cached.removeSeat(seatKey);
+        CacheEntry entry = liveEntry(showId);
+        if (entry != null) {
+            entry.occupiedSeats.remove(seatKey);
         }
     }
 
-    /**
-     * Start background cleanup scheduler to remove expired entries.
-     */
-    public void startCleanupScheduler() {
-        cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "seat-cache-cleanup");
-            thread.setDaemon(true);
-            return thread;
-        });
-        cleanupExecutor.scheduleAtFixedRate(
-            this::cleanupExpiredEntries,
-            CLEANUP_INTERVAL_SECONDS,
-            CLEANUP_INTERVAL_SECONDS,
-            TimeUnit.SECONDS
-        );
-        LOGGER.info("Seat availability cache cleanup scheduler started");
-    }
-
-    /**
-     * Stop the cleanup scheduler.
-     */
-    public void stopCleanupScheduler() {
-        if (cleanupExecutor != null) {
-            cleanupExecutor.shutdownNow();
-            LOGGER.info("Seat availability cache cleanup scheduler stopped");
+    private CacheEntry liveEntry(Long showId) {
+        CacheEntry entry = cache.get(showId);
+        if (entry != null && !entry.isExpired()) {
+            return entry;
         }
-    }
-
-    /**
-     * Remove all expired cache entries.
-     */
-    private void cleanupExpiredEntries() {
-        try {
-            cache.entrySet().removeIf(entry -> entry.getValue().isExpired());
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Cache cleanup failed", e);
+        if (entry != null) {
+            cache.remove(showId, entry);
         }
-    }
-
-    private void mergeActiveHolds(Long showId, CachedShowSeats cached) {
-        ConcurrentHashMap<String, Long> holds = activeHolds.get(showId);
-        if (holds != null) {
-            long now = System.currentTimeMillis();
-            holds.forEach((seatKey, expiresAt) -> {
-                if (expiresAt > now) {
-                    cached.addSeat(seatKey, CachedShowSeats.SeatStatus.HELD);
-                } else {
-                    holds.remove(seatKey, expiresAt);
-                }
-            });
-            if (holds.isEmpty()) {
-                activeHolds.remove(showId, holds);
-            }
-        }
-    }
-
-    private void removeActiveHold(Long showId, String seatKey) {
-        ConcurrentHashMap<String, Long> holds = activeHolds.get(showId);
-        if (holds != null) {
-            holds.remove(seatKey);
-            if (holds.isEmpty()) {
-                activeHolds.remove(showId, holds);
-            }
-        }
+        return null;
     }
 
     /**
@@ -158,5 +78,19 @@ public class SeatAvailabilityCache {
      */
     public int getCacheSize() {
         return cache.size();
+    }
+
+    private static final class CacheEntry {
+        private final Map<String, String> occupiedSeats;
+        private final long timestamp;
+
+        private CacheEntry(Map<String, String> occupiedSeats) {
+            this.occupiedSeats = new ConcurrentHashMap<>(new HashMap<>(occupiedSeats));
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        private boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > TTL_MILLIS;
+        }
     }
 }

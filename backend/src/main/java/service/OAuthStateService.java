@@ -14,8 +14,12 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 public class OAuthStateService {
+
+    private static final Logger LOGGER = Logger.getLogger(OAuthStateService.class.getName());
 
     private static final String SESSION_ATTRIBUTE = OAuthStateService.class.getName() + ".transactions";
     private static final Duration TRANSACTION_LIFETIME = Duration.ofMinutes(5);
@@ -49,6 +53,8 @@ public class OAuthStateService {
         Map<String, Transaction> transactions = transactions(session);
         transactions.entrySet().removeIf(entry -> isExpired(entry.getValue()));
         transactions.put(transaction.state(), transaction);
+        LOGGER.info("event=oauth.state.created requestId=" + RequestLogContext.requestId()
+            + " provider=" + provider + " intent=" + intent);
         return transaction;
     }
 
@@ -66,6 +72,8 @@ public class OAuthStateService {
         if (isExpired(transaction)) {
             throw new IllegalArgumentException("OAuth transaction has expired");
         }
+        LOGGER.info("event=oauth.state.consumed requestId=" + RequestLogContext.requestId()
+            + " provider=" + transaction.provider() + " intent=" + transaction.intent());
         return transaction;
     }
 

@@ -43,9 +43,8 @@ public class JerseyApplication extends ResourceConfig {
         packages("resource", "exception");
         register(JacksonFeature.class);
 
-        // Create and start cache cleanup scheduler
+        // Create the shared cache instance for dependency injection.
         seatAvailabilityCache = new SeatAvailabilityCache();
-        seatAvailabilityCache.startCleanupScheduler();
 
         register(new AbstractBinder() {
             @Override

@@ -1,23 +1,28 @@
 package config;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
+import java.util.concurrent.ThreadLocalRandom;
 
 /*
- * Manages database configuration, connection pooling/opening, and transaction boundaries using ThreadLocal.
+ * Manages database configuration, a shared connection pool, and transaction boundaries using ThreadLocal.
  */
 
 public final class Database {
 
-    private static final int DEADLOCK_RETRY_LIMIT = 3;
-    private static final long DEADLOCK_RETRY_DELAY_MILLIS = 50L;
+    private static final int DEADLOCK_RETRY_LIMIT = 5;
+    private static final long DEADLOCK_RETRY_BASE_DELAY_MILLIS = 50L;
+    private static final long DEADLOCK_RETRY_MAX_DELAY_MILLIS = 1_000L;
+    private static final long DEADLOCK_RETRY_JITTER_MILLIS = 50L;
 
-    // ThreadLocal to hold active transaction connection per thread
     private static final ThreadLocal<Connection> TX = new ThreadLocal<>();
+    private static HikariDataSource dataSource;
     private static String url;
     private static String user;
     private static String password;
@@ -25,7 +30,6 @@ public final class Database {
     private Database() {
     }
 
-    // Initializes database properties and loads the MySQL JDBC driver
     public static void init() {
         Properties properties = new Properties();
         try (InputStream in = Database.class.getClassLoader().getResourceAsStream("db.properties")) {
@@ -42,13 +46,39 @@ public final class Database {
         password = firstConfigured("DB_PASSWORD", "db.password", properties.getProperty("db.password"));
 
         if (!url.contains("useUnicode=true") && !url.contains("characterEncoding=")) {
-            url = url + (url.contains("?") ? "&" : "?") + "useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci";
+            url = url + (url.contains("?") ? "&" : "?")
+                    + "useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci";
         }
 
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("MySQL driver not found", e);
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(url);
+        config.setUsername(user);
+        config.setPassword(password);
+        config.setDriverClassName("com.mysql.cj.jdbc.Driver");
+        config.setPoolName("movie-booking-pool");
+        config.setMaximumPoolSize(10);
+        config.setMinimumIdle(2);
+        config.setConnectionTimeout(30_000);
+        config.setIdleTimeout(60_000);
+        config.setMaxLifetime(30 * 60_000L);
+        config.setValidationTimeout(5_000);
+        config.setConnectionTestQuery("SELECT 1");
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        config.addDataSourceProperty("useServerPrepStmts", "true");
+        config.addDataSourceProperty("useUnicode", "true");
+        config.addDataSourceProperty("characterEncoding", "UTF-8");
+
+        if (dataSource != null && !dataSource.isClosed()) {
+            dataSource.close();
+        }
+        dataSource = new HikariDataSource(config);
+    }
+
+    public static void shutdown() {
+        if (dataSource != null && !dataSource.isClosed()) {
+            dataSource.close();
         }
     }
 
@@ -60,16 +90,17 @@ public final class Database {
         return EnvironmentConfig.get(systemPropertyName, fileValue);
     }
 
-    // Opens a new database connection
     public static Connection openConnection() throws SQLException {
-        Connection connection = DriverManager.getConnection(url, user, password);
+        if (dataSource == null) {
+            throw new IllegalStateException("Database has not been initialized");
+        }
+        Connection connection = dataSource.getConnection();
         try (var statement = connection.createStatement()) {
             statement.execute("SET time_zone = '+00:00'");
         }
         return connection;
     }
 
-    // Returns the current active connection (transaction connection if in transaction, otherwise opens a new one)
     public static Connection current() {
         Connection tx = TX.get();
         if (tx != null) {
@@ -82,56 +113,46 @@ public final class Database {
         }
     }
 
-    // Checks if the current thread is inside a transaction
     public static boolean inTransaction() {
         return TX.get() != null;
     }
 
-    // Closes the connection only if it is not managed by an active transaction
     public static void closeIfUnmanaged(Connection connection) {
-        if (TX.get() != null) {
+        if (TX.get() != null || connection == null) {
             return;
         }
         try {
-            connection.close();
+            if (!connection.isClosed()) {
+                connection.close();
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Could not close connection", e);
         }
     }
 
-    // Executes a block of code within a database transaction (commits on success, rolls back on exception)
     public static <T> T inTransaction(Work<T> work) throws SQLException {
-        if (TX.get() != null) {
+        Connection existing = TX.get();
+        if (existing != null) {
             return work.run();
         }
 
-        Connection connection;
-        try {
-            connection = openConnection();
-            connection.setAutoCommit(false);
-        } catch (SQLException e) {
-            throw new IllegalStateException("Could not start transaction", e);
-        }
-
+        Connection connection = openConnection();
+        connection.setAutoCommit(false);
         TX.set(connection);
+
         try {
             T result = work.run();
             connection.commit();
             return result;
         } catch (RuntimeException e) {
-            try {
-                connection.rollback();
-            } catch (SQLException rollbackError) {
-                e.addSuppressed(rollbackError);
-            }
+            rollbackQuietly(connection, e);
+            throw e;
+        } catch (SQLException e) {
+            rollbackQuietly(connection, e);
             throw e;
         } finally {
             TX.remove();
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                throw new IllegalStateException("Could not close transaction connection", e);
-            }
+            closeIfUnmanaged(connection);
         }
     }
 
@@ -143,22 +164,51 @@ public final class Database {
                 if (!isDeadlock(error) || attempt == DEADLOCK_RETRY_LIMIT) {
                     throw error;
                 }
-                try {
-                    Thread.sleep(DEADLOCK_RETRY_DELAY_MILLIS * attempt);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
+                sleepBeforeRetry(attempt);
+            } catch (SQLException error) {
+                if (!isDeadlock(error) || attempt == DEADLOCK_RETRY_LIMIT) {
                     throw error;
                 }
+                sleepBeforeRetry(attempt);
             }
         }
         throw new IllegalStateException("Deadlock retry limit exceeded");
     }
 
+    private static void rollbackQuietly(Connection connection, Throwable error) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackError) {
+            error.addSuppressed(rollbackError);
+        }
+    }
+
+    private static void sleepBeforeRetry(int attempt) {
+        try {
+            Thread.sleep(deadlockRetryDelayMillis(attempt));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for deadlock retry", interrupted);
+        }
+    }
+
+    private static long deadlockRetryDelayMillis(int attempt) {
+        long exponentialDelay = DEADLOCK_RETRY_BASE_DELAY_MILLIS
+                * (1L << Math.min(attempt - 1, 10));
+        long boundedDelay = Math.min(exponentialDelay, DEADLOCK_RETRY_MAX_DELAY_MILLIS);
+        long jitter = ThreadLocalRandom.current().nextLong(DEADLOCK_RETRY_JITTER_MILLIS + 1);
+        return Math.min(boundedDelay + jitter, DEADLOCK_RETRY_MAX_DELAY_MILLIS);
+    }
+
     private static boolean isDeadlock(Throwable error) {
         Throwable current = error;
         while (current != null) {
-            if (current instanceof SQLException sqlException && sqlException.getErrorCode() == 1213) {
-                return true;
+            if (current instanceof SQLException sqlException) {
+                int code = sqlException.getErrorCode();
+                String sqlState = sqlException.getSQLState();
+                if (code == 1213 || "40001".equals(sqlState) || "40P01".equals(sqlState)) {
+                    return true;
+                }
             }
             current = current.getCause();
         }
@@ -170,3 +220,92 @@ public final class Database {
         T run();
     }
 }
+
+
+// package config;
+
+// import com.zaxxer.hikari.HikariDataSource;
+// import com.zaxxer.hikari.HikariConfig;
+// import java.util.Properties;
+// import java.io.InputStream;
+// import java.io.IOException;
+// import java.sql.Connection;
+
+// public final class Database {
+//     private static HikariDataSource dataSource;
+//     private static final ThreadLocal<Connection> TX = new ThreadLocal<>();
+//     private Database() {}
+    
+//     public static void init() {
+//         HikariConfig config = new HikariConfig();
+//         Properties properties = new Properties();
+//         try (InputStream input = Database.class.getClassLoader().getResourceAsStream("db.properties")) {
+//             if (input == null) {
+//                 throw new RuntimeException("Unable to find db.properties");
+//             }
+//             properties.load(input);
+            
+
+//         } catch (IOException e) {
+//             throw new RuntimeException("Failed to load database properties", e);
+//         }
+
+//         String url = properties.getProperty("db.url");
+//         String user = properties.getProperty("db.user");
+//         String password = properties.getProperty("db.password");
+
+//         config.setJdbcUrl(url);
+//         config.setUsername(user);
+//         config.setPassword(password);
+
+//         config.setMaximumPoolSize(10);
+//         config.setMinimumIdle(2);
+
+//         dataSource = new HikariDataSource(config);
+//     }
+
+//     public static Connection openConnection() throws SQLException {
+//         if (dataSource == null) {
+//             throw new IllegalStateException("DataSource has not been initialized");
+//         }
+//         return dataSource.getConnection();
+//     }
+
+//     public static Connection current() {
+//         Connection tx = TX.get();
+//         if (tx != null) {
+//             return tx;
+//         }
+//         try {
+//             return openConnection();
+//         } catch (SQLException e) {
+//             throw new IllegalStateException("Could not open database connection", e);
+//         }
+//     }
+
+//     public static <T> T inTransaction(Work<T> work) throws SQLException {
+//         Connection existing = TX.get();
+//         if (existing != null) {
+//             return work.run();
+//         }
+
+//         Connection connection = openConnection();
+//         connection.setAutoCommit(false);
+//         TX.set(connection);
+
+//         try {
+//             T result = work.run();
+//             connection.commit();
+//             return result;
+//         } catch (Exception e) {
+//             connection.rollback();
+//             throw new SQLException("Error occurred in transaction", e);
+//         } finally {
+//             TX.remove();
+//             connection.close();
+//         }
+//     }
+
+    
+// }
+ 

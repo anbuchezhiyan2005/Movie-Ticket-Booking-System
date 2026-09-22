@@ -332,112 +332,110 @@ async function showSeats(showId) {
 }
 
 async function renderSeats(showId, resetSelection = false) {
-    const seats = await request(`/shows/${showId}/seats`);
+    const seatMap = await request(`/shows/${showId}/seats`);
     if (resetSelection) selectedSeats = [];
-    
+
     const list = $('.show-list');
     if (!list) return;
-    
+
+    if (resetSelection || !list.querySelector('.seat-list')) {
+        buildSeatGrid(list, showId, seatMap);
+    }
+    applyOccupiedSeats(seatMap.occupiedSeats || {});
+}
+
+function buildSeatGrid(list, showId, layout) {
     const showRow = document.createElement('div');
     showRow.className = 'show-row';
-    
+
     const leftDiv = document.createElement('div');
-    
     const kicker = document.createElement('p');
     kicker.className = 'kicker';
-    kicker.textContent = 'Select seats';
-    
+    kicker.textContent = `Select seats · ${layout.screenName}`;
+
     const seatListDiv = document.createElement('div');
     seatListDiv.className = 'seat-list';
-    
-    seats.forEach((seat) => {
-        const key = `${seat.rowLabel}-${seat.seatNumber}`;
-        const selected = selectedSeats.includes(key);
-        
-        const status = String(seat.status || (seat.available ? 'AVAILABLE' : 'BOOKED')).toUpperCase();
-        
-        let seatClass = 'seat';
-        if (status === 'HELD') {
-            seatClass += ' held';
-        } else if (status === 'BOOKED') {
-            seatClass += ' unavailable';
-        } else {
-            seatClass += ' available';
+    const rows = layout.rowRange.split('-');
+    const firstRow = rows[0].trim().toUpperCase().charCodeAt(0);
+    const lastRow = rows[1].trim().toUpperCase().charCodeAt(0);
+
+    for (let rowCode = firstRow; rowCode <= lastRow; rowCode++) {
+        const rowLabel = String.fromCharCode(rowCode);
+        for (let seatNumber = 1; seatNumber <= layout.seatsPerRow; seatNumber++) {
+            const key = `${rowLabel}-${seatNumber}`;
+            const button = document.createElement('button');
+            button.className = 'seat available';
+            button.type = 'button';
+            button.dataset.seat = key;
+            button.textContent = `${rowLabel}${seatNumber}`;
+            button.addEventListener('click', () => toggleSeat(button));
+            seatListDiv.appendChild(button);
         }
-        
-        if (selected) seatClass += ' selected';
-        
-        const button = document.createElement('button');
-        button.className = seatClass;
-        button.type = 'button';
-        button.dataset.seat = key;
-        button.textContent = `${seat.rowLabel}${seat.seatNumber}`;
-        
-        const isClickable = status === 'AVAILABLE' && seat.available !== false;
-        if (!isClickable) button.disabled = true;
-        else button.addEventListener('click', () => toggleSeat(button));
-        
-        seatListDiv.appendChild(button);
-    });
-    
+    }
+
     const selectedLabel = document.createElement('p');
     selectedLabel.className = 'details-copy';
     const selectedSpan = document.createElement('span');
     selectedSpan.id = 'selected-seat-label';
-    selectedSpan.textContent = selectedSeats.length ? selectedSeats.join(', ') : 'none';
+    selectedSpan.textContent = 'none';
     selectedLabel.appendChild(document.createTextNode('Selected seats: '));
     selectedLabel.appendChild(selectedSpan);
-    
-    const seatInfo = document.createElement('p');
-    seatInfo.className = 'seat-info';
-    
-    const createLegendItem = (color, border, text) => {
-        const span = document.createElement('span');
-        span.style.display = 'inline-block';
-        span.style.width = '12px';
-        span.style.height = '12px';
-        span.style.background = color;
-        span.style.border = border;
-        span.style.marginRight = '8px';
-        return span;
-    };
-    
-    seatInfo.appendChild(createLegendItem('#4CAF50', '1px solid #333'));
-    seatInfo.appendChild(document.createTextNode('Available \u00A0 '));
-    seatInfo.appendChild(createLegendItem('#FFD700', '2px solid #FFA500'));
-    seatInfo.appendChild(document.createTextNode('Pending (temporary hold) \u00A0 '));
-    seatInfo.appendChild(createLegendItem('#999', '1px solid #333'));
-    seatInfo.appendChild(document.createTextNode('Booked'));
-    
+
     leftDiv.appendChild(kicker);
     leftDiv.appendChild(seatListDiv);
     leftDiv.appendChild(selectedLabel);
-    leftDiv.appendChild(seatInfo);
-    
+
     const rightDiv = document.createElement('div');
-    
     const bookButton = document.createElement('button');
     bookButton.id = 'book-button';
     bookButton.className = 'button button-primary';
     bookButton.type = 'button';
     bookButton.textContent = 'Book selected seats';
     bookButton.addEventListener('click', bookSelectedSeats);
-    
+
     const refreshButton = document.createElement('button');
     refreshButton.id = 'refresh-seats-button';
     refreshButton.className = 'button button-quiet';
     refreshButton.type = 'button';
     refreshButton.textContent = '\u27F2 Refresh seats';
     refreshButton.addEventListener('click', () => renderSeats(showId));
-    
+
     rightDiv.appendChild(bookButton);
     rightDiv.appendChild(refreshButton);
-    
     showRow.appendChild(leftDiv);
     showRow.appendChild(rightDiv);
-    
     list.innerHTML = '';
     list.appendChild(showRow);
+}
+
+function applyOccupiedSeats(occupiedSeats) {
+    const removedSeats = [];
+    document.querySelectorAll('.seat-list .seat').forEach((button) => {
+        const key = button.dataset.seat;
+        const status = String(occupiedSeats[key] || 'AVAILABLE').toUpperCase();
+        const wasSelected = selectedSeats.includes(key);
+
+        button.classList.remove('available', 'held', 'unavailable');
+        if (status === 'BOOKED') {
+            button.classList.add('unavailable');
+            button.disabled = true;
+        } else if (status === 'HELD') {
+            button.classList.add('held');
+            button.disabled = true;
+        } else {
+            button.classList.add('available');
+            button.disabled = false;
+        }
+
+        button.classList.toggle('selected', wasSelected && status === 'AVAILABLE');
+        if (wasSelected && status !== 'AVAILABLE') removedSeats.push(key);
+    });
+
+    if (removedSeats.length) {
+        selectedSeats = selectedSeats.filter((seat) => !removedSeats.includes(seat));
+        showNotice(`Seat ${removedSeats.join(', ')} is no longer available`, true);
+    }
+    $('#selected-seat-label').textContent = selectedSeats.length ? selectedSeats.join(', ') : 'none';
 }
 
 function startSeatRefresh(showId) {
@@ -487,6 +485,52 @@ function formatDate(value) {
 
 function formatTime(value) {
     return parseLocalDateTime(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatBookingShowWindow(booking) {
+    const start = parseLocalDateTime(booking.showStartTime);
+    const end = new Date(start.getTime() + Number(booking.durationMinutes || 0) * 60 * 1000);
+    return `${formatDate(start)} · ${formatTime(start)} - ${formatTime(end)}`;
+}
+
+function appendBookingDetail(container, label, value) {
+    const row = document.createElement('div');
+    row.className = 'booking-detail-row';
+
+    const labelElement = document.createElement('span');
+    labelElement.className = 'booking-detail-label';
+    labelElement.textContent = label;
+
+    const valueElement = document.createElement('strong');
+    valueElement.className = 'booking-detail-value';
+    valueElement.textContent = value;
+
+    row.appendChild(labelElement);
+    row.appendChild(valueElement);
+    container.appendChild(row);
+}
+
+function renderBookingDetails(booking) {
+    const panel = document.createElement('div');
+    panel.className = 'booking-details hidden';
+
+    const grid = document.createElement('div');
+    grid.className = 'booking-detail-grid';
+    appendBookingDetail(grid, 'Movie', booking.movieName || 'Movie details unavailable');
+    appendBookingDetail(grid, 'Show', booking.showStartTime
+        ? formatBookingShowWindow(booking)
+        : 'Show details unavailable');
+    appendBookingDetail(grid, 'Screen', booking.screenName || 'Screen details unavailable');
+    appendBookingDetail(grid, 'Theatre', booking.theatreName || 'Theatre details unavailable');
+    appendBookingDetail(grid, 'Location', booking.theatreLocation || 'Location unavailable');
+    appendBookingDetail(grid, 'Seats', booking.seats.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(', ') || 'none');
+    appendBookingDetail(grid, 'Total paid', `Rs ${Number(booking.totalAmount).toLocaleString('en-IN')}`);
+    appendBookingDetail(grid, 'Booked at', booking.bookingTime
+        ? `${formatDate(booking.bookingTime)} · ${formatTime(booking.bookingTime)}`
+        : 'Unavailable');
+
+    panel.appendChild(grid);
+    return panel;
 }
 
 function toggleSeat(button) {
@@ -590,9 +634,25 @@ async function loadBookings() {
                 const statusDiv = document.createElement('div');
                 const seatLabels = booking.seats.map((seat) => seat.rowLabel + seat.seatNumber).join(', ');
                 statusDiv.textContent = `${booking.status} \u00b7 ${seatLabels}`;
+
+                const detailPanel = renderBookingDetails(booking);
+                const actions = document.createElement('div');
+                actions.className = 'booking-actions';
+
+                const viewButton = document.createElement('button');
+                viewButton.className = 'button button-quiet';
+                viewButton.type = 'button';
+                viewButton.textContent = 'View details';
+                viewButton.setAttribute('aria-expanded', 'false');
+                viewButton.addEventListener('click', () => {
+                    const expanded = !detailPanel.classList.toggle('hidden');
+                    viewButton.textContent = expanded ? 'Hide details' : 'View details';
+                    viewButton.setAttribute('aria-expanded', String(expanded));
+                });
                 
                 details.appendChild(id);
                 details.appendChild(statusDiv);
+                actions.appendChild(viewButton);
                 
                 const button = document.createElement('button');
                 button.className = 'button button-quiet';
@@ -601,9 +661,11 @@ async function loadBookings() {
                 button.dataset.cancelId = booking.bookingId;
                 if (booking.status !== 'CONFIRMED') button.disabled = true;
                 button.addEventListener('click', () => cancelBooking(button.dataset.cancelId));
+                actions.appendChild(button);
                 
                 item.appendChild(details);
-                item.appendChild(button);
+                item.appendChild(actions);
+                item.appendChild(detailPanel);
                 bookingList.appendChild(item);
             });
         } else {

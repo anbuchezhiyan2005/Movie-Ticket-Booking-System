@@ -22,6 +22,7 @@ import model.User;
 import service.AuthService;
 import service.OAuthProviderService;
 import util.RequestUsers;
+import util.RequestLogContext;
 
 import java.net.URI;
 import java.util.logging.Level;
@@ -83,7 +84,8 @@ public class AuthResource {
     @GET
     @Path("/google/start")
     public Response googleStart(@Context HttpServletRequest httpRequest) {
-        LOGGER.info("OAuth sign-in started provider=GOOGLE");
+        LOGGER.info("event=auth.oauth.started requestId=" + RequestLogContext.requestId()
+            + " provider=GOOGLE intent=sign_in");
         return Response.seeOther(URI.create(
                 oauthProviderService.authorizationUrl(httpRequest, AuthProvider.GOOGLE))).build();
     }
@@ -101,7 +103,8 @@ public class AuthResource {
     @GET
     @Path("/twitter/start")
     public Response twitterStart(@Context HttpServletRequest httpRequest) {
-        LOGGER.info("OAuth sign-in started provider=TWITTER");
+        LOGGER.info("event=auth.oauth.started requestId=" + RequestLogContext.requestId()
+            + " provider=TWITTER intent=sign_in");
         return Response.seeOther(URI.create(
                 oauthProviderService.authorizationUrl(httpRequest, AuthProvider.TWITTER))).build();
     }
@@ -152,6 +155,9 @@ public class AuthResource {
     @POST
     @Path("/logout")
     public Response logout(@Context HttpServletRequest httpRequest) {
+        Object userId = httpRequest.getAttribute(filter.AuthFilter.USER_ID);
+        LOGGER.info("event=auth.logout requestId=" + RequestLogContext.requestId()
+            + " userId=" + (userId == null ? "anonymous" : userId));
         RequestUsers.logout(httpRequest);
         return Response.noContent().build();
     }
@@ -170,8 +176,8 @@ public class AuthResource {
                                    String providerError, String providerErrorDescription,
                                    HttpServletRequest httpRequest) {
         if (providerError != null && !providerError.isBlank()) {
-            LOGGER.warning("OAuth provider denied callback provider=" + provider
-                    + " error=" + providerError
+                LOGGER.warning("event=auth.oauth.failed requestId=" + RequestLogContext.requestId()
+                    + " provider=" + provider + " reason=provider_denied"
                     + " descriptionPresent=" + (providerErrorDescription != null));
             return oauthErrorRedirect("oauth_denied");
         }
@@ -189,13 +195,13 @@ public class AuthResource {
                 user = authService.authenticateSocial(provider, callback.profile());
                 RequestUsers.login(httpRequest, user.getId(), user.getRole());
             }
-                LOGGER.info("OAuth callback succeeded provider=" + provider
-                    + " intent=" + callback.transaction().intent());
+            LOGGER.info("event=auth.oauth.callback.succeeded requestId=" + RequestLogContext.requestId()
+                    + " provider=" + provider + " intent=" + callback.transaction().intent());
             return Response.seeOther(URI.create(OAuthConfiguration.successRedirectUri())).build();
         } catch (RuntimeException exception) {
                 LOGGER.log(Level.WARNING,
-                    "OAuth callback failed provider=" + provider
-                        + " requestUri=" + httpRequest.getRequestURI()
+                    "event=auth.oauth.callback.failed requestId=" + RequestLogContext.requestId()
+                        + " provider=" + provider + " reason=callback_failed"
                         + " codePresent=" + (code != null && !code.isBlank())
                         + " statePresent=" + (state != null && !state.isBlank()),
                     exception);

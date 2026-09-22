@@ -1,9 +1,9 @@
 package config;
 
-import io.github.cdimascio.dotenv.Dotenv;
+import io.github.cdimascio.dotenv.Dotenv; // used for loading environment variables from a .env file
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.Files; // used for checking if a file exists
+import java.nio.file.Path; // used for file path manipulation
 
 public final class EnvironmentConfig {
 
@@ -19,6 +19,7 @@ public final class EnvironmentConfig {
 
         Path dotenvPath = configuredPath();
         if (dotenvPath != null && Files.isRegularFile(dotenvPath)) {
+            // Load the .env file from the specified path
             dotenv = Dotenv.configure()
                     .directory(dotenvPath.getParent().toString())
                     .filename(dotenvPath.getFileName().toString())
@@ -55,6 +56,7 @@ public final class EnvironmentConfig {
         return dotenvValue == null || dotenvValue.isBlank() ? defaultValue : dotenvValue;
     }
 
+    // Get the configured path for the .env file, either from system properties or environment variables
     private static Path configuredPath() {
         String configuredPath = System.getProperty("dotenv.path");
         if (configuredPath == null || configuredPath.isBlank()) {
@@ -63,12 +65,16 @@ public final class EnvironmentConfig {
         return configuredPath == null || configuredPath.isBlank() ? null : Path.of(configuredPath);
     }
 
+    // Search for a .env file starting from the given directory and moving up the directory tree
     private static Path searchDirectory(Path start) {
+        // convert the starting path to an absolute and normalized path
         Path current = start.toAbsolutePath().normalize();
         while (current != null) {
+            // Checks if a .env file exists in the current directory
             if (Files.isRegularFile(current.resolve(".env"))) {
                 return current;
             }
+            // Move up to the parent directory
             current = current.getParent();
         }
         return null;

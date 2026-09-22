@@ -483,6 +483,7 @@ button.tab,
 .booking-list { display: grid; gap: 10px; }
 .booking-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
@@ -491,6 +492,35 @@ button.tab,
     background: var(--panel);
 }
 .booking-item strong { font-size: 20px; }
+.booking-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.booking-details {
+    flex-basis: 100%;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+}
+.booking-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 24px;
+}
+.booking-detail-row {
+    display: grid;
+    gap: 3px;
+}
+.booking-detail-label {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.booking-detail-value {
+    font-size: 13px;
+    font-weight: 500;
+}
 .loading { color: var(--muted); }
 .hidden { display: none !important; }
 
@@ -521,6 +551,8 @@ footer {
     }
     .panel, .catalogue-section, .admin-panel, .account-panel { padding-left: 7vw; padding-right: 7vw; }
     .section-heading, .account-panel-heading, .account-facts, .booking-item { flex-direction: column; align-items: flex-start; }
+    .booking-actions { width: 100%; flex-wrap: wrap; }
+    .booking-detail-grid { grid-template-columns: 1fr; }
     .account-facts .button { margin-left: 0; }
     footer { flex-direction: column; }
 }

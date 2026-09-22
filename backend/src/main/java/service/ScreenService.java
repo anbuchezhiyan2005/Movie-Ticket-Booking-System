@@ -8,11 +8,9 @@ import exception.NotFoundException;
 import exception.ValidationException;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import model.Movie;
 import model.Screen;
 import model.Show;
 import model.Theatre;
-import repository.MovieRepository;
 import repository.ScreenRepository;
 import repository.BookingRepository;
 import repository.ShowRepository;
@@ -22,14 +20,17 @@ import util.ShowTimes;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class ScreenService {
 
+    private static final Logger LOGGER = Logger.getLogger(ScreenService.class.getName());
+
     private final ScreenRepository screenRepository;
     private final TheatreRepository theatreRepository;
     private final ShowRepository showRepository;
-    private final MovieRepository movieRepository;
     private final BookingRepository bookingRepository;
 
     @Inject
@@ -37,12 +38,10 @@ public class ScreenService {
             ScreenRepository screenRepository,
             TheatreRepository theatreRepository,
             ShowRepository showRepository,
-            MovieRepository movieRepository,
             BookingRepository bookingRepository) {
         this.screenRepository = screenRepository;
         this.theatreRepository = theatreRepository;
         this.showRepository = showRepository;
-        this.movieRepository = movieRepository;
         this.bookingRepository = bookingRepository;
     }
 
@@ -57,7 +56,11 @@ public class ScreenService {
         screen.setRowRange(request.getRowRange().trim().toUpperCase());
         screen.setSeatsPerRow(request.getSeatsPerRow());
         ShowTimes.generateRows(screen.getRowRange());
-        return screenRepository.save(screen);
+        Screen saved = screenRepository.save(screen);
+        LOGGER.info("event=screen.created requestId=" + RequestLogContext.requestId()
+            + " screenId=" + saved.getScreenId() + " theatreId=" + saved.getTheatreId()
+            + " adminId=" + adminId);
+        return saved;
     }
 
     public void updateScreen(Long screenId, ScreenRequest request, Long adminId) {
@@ -75,6 +78,8 @@ public class ScreenService {
         screen.setSeatsPerRow(request.getSeatsPerRow());
         ShowTimes.generateRows(screen.getRowRange());
         screenRepository.update(screen);
+        LOGGER.info("event=screen.updated requestId=" + RequestLogContext.requestId()
+            + " screenId=" + screenId + " adminId=" + adminId);
     }
 
     public void deleteScreen(Long screenId, Long adminId) {
@@ -88,14 +93,19 @@ public class ScreenService {
             throw new ConflictException("Delete ended shows on this screen before deleting the screen");
         }
         screenRepository.deleteById(screenId);
+        LOGGER.info("event=screen.deleted requestId=" + RequestLogContext.requestId()
+            + " screenId=" + screenId + " adminId=" + adminId);
     }
 
     public List<ScreenResponse> getScreensForTheatre(Long theatreId, Long adminId) {
         Theatre theatre = getTheatre(theatreId);
         verifyOwnership(theatre, adminId);
-        return screenRepository.findByTheatreId(theatreId).stream()
+        List<ScreenResponse> screens = screenRepository.findByTheatreId(theatreId).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+        LOGGER.info("event=screen.listed requestId=" + RequestLogContext.requestId()
+            + " theatreId=" + theatreId + " adminId=" + adminId + " count=" + screens.size());
+        return screens;
     }
 
     public ScreenResponse toResponse(Screen screen) {
@@ -108,14 +118,10 @@ public class ScreenService {
         return response;
     }
 
+    // OPTIMIZED
     private void requireAllShowsEnded(Long screenId) {
-        LocalDateTime now = LocalDateTime.now();
-        for (Show show : showRepository.findByScreenId(screenId)) {
-            Movie movie = movieRepository.findById(show.getMovieId())
-                    .orElseThrow(() -> new NotFoundException("Movie not found"));
-            if (!ShowTimes.hasEnded(show.getShowTiming(), movie.getDurationInMinutes(), now)) {
-                throw new ConflictException("Cannot change screen until all of its shows have ended");
-            }
+        if (showRepository.existsUnfinishedShowOnScreen(screenId, LocalDateTime.now())) {
+            throw new ConflictException("Cannot change screen until all of its shows have ended");
         }
     }
 

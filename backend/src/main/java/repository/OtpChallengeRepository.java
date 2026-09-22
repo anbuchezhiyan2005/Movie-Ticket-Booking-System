@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Singleton
@@ -97,13 +98,36 @@ public class OtpChallengeRepository extends JdbcSupport {
         });
     }
 
-    public void invalidateActiveByBookingId(Long bookingId, LocalDateTime invalidatedAt) {
+    public void deleteByBookingIds(List<Long> bookingIds) {
+        if (bookingIds == null || bookingIds.isEmpty()) {
+            return;
+        }
+
         execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE otp_challenges SET consumed_at = ? "
-                            + "WHERE booking_id = ? AND consumed_at IS NULL")) {
-                statement.setTimestamp(1, Timestamp.valueOf(invalidatedAt));
-                statement.setLong(2, bookingId);
+            String placeholders = String.join(", ", java.util.Collections.nCopies(bookingIds.size(), "?"));
+            String sql = "DELETE FROM otp_challenges WHERE booking_id IN (" + placeholders + ")";
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                for (int index = 0; index < bookingIds.size(); index++) {
+                    statement.setLong(index + 1, bookingIds.get(index));
+                }
+                statement.executeUpdate();
+                return null;
+            }
+        });
+    }
+
+    public void deleteByExpiredBooking(LocalDateTime now) {
+        execute(connection -> {
+            String sql = """
+                    DELETE oc
+                    FROM otp_challenges oc
+                    JOIN bookings b ON b.booking_id = oc.booking_id
+                    WHERE b.status IN ('PENDING', 'AWAITING_OTP')
+                      AND b.expires_at IS NOT NULL
+                      AND b.expires_at < ?
+                    """;
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setTimestamp(1, Timestamp.valueOf(now));
                 statement.executeUpdate();
                 return null;
             }

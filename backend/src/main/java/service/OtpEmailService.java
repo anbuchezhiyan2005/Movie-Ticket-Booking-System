@@ -13,6 +13,7 @@ import jakarta.mail.internet.MimeMessage;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class OtpEmailService {
@@ -49,10 +50,11 @@ public class OtpEmailService {
                 message.setText("Your verification code for " + purpose.toLowerCase()
                     + " is " + code + ". It expires in 5 minutes.");
             Transport.send(message);
-            LOGGER.info(() -> "OTP email sent purpose=" + purpose + " destination=" + mask(recipient));
+                LOGGER.info("event=otp.email.sent requestId=" + RequestLogContext.requestId()
+                    + " purpose=" + purpose + " destination=" + mask(recipient));
         } catch (Exception exception) {
-            LOGGER.log(Level.WARNING, "OTP email delivery failed purpose=" + purpose
-                    + " destination=" + mask(recipient), exception);
+                LOGGER.log(Level.WARNING, "event=otp.email.failed requestId=" + RequestLogContext.requestId()
+                    + " purpose=" + purpose + " destination=" + mask(recipient), exception);
             throw new IllegalStateException("OTP email delivery failed", exception);
         }
     }

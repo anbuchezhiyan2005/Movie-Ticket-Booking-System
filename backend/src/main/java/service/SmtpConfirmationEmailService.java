@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class SmtpConfirmationEmailService implements ConfirmationEmailService {
@@ -58,7 +59,8 @@ public class SmtpConfirmationEmailService implements ConfirmationEmailService {
                 return;
             } catch (RuntimeException error) {
                 if (attempt == MAX_ATTEMPTS) {
-                    LOGGER.log(Level.SEVERE, "Unable to send booking confirmation for booking "
+                        LOGGER.log(Level.SEVERE, "event=system.error requestId=" + RequestLogContext.requestId()
+                            + " location=booking.confirmation_email_send bookingId="
                             + confirmation.bookingId(), error);
                 }
             }
@@ -67,8 +69,9 @@ public class SmtpConfirmationEmailService implements ConfirmationEmailService {
 
     private void send(ConfirmationEmail confirmation) {
         if (!settings.isConfigured()) {
-            LOGGER.warning("Booking confirmation email is not configured; skipping delivery for booking "
-                    + confirmation.bookingId());
+                LOGGER.warning("event=booking.confirmation_email.skipped requestId="
+                    + RequestLogContext.requestId() + " bookingId=" + confirmation.bookingId()
+                    + " reason=not_configured");
             return;
         }
 

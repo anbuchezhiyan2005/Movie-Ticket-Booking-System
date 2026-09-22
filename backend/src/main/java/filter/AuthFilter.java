@@ -9,15 +9,20 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import util.RequestUsers;
+import util.RequestLogContext;
 import enums.Role;
 
 import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /*
  * Filter that intercepts incoming HTTP requests to handle authentication.
  * It allows public endpoints to pass through and checks session data for protected ones.
  */
 public class AuthFilter implements Filter {
+
+    private static final Logger LOGGER = Logger.getLogger(AuthFilter.class.getName());
 
     // Session attribute keys
     public static final String USER_ID = "userId";
@@ -27,11 +32,33 @@ public class AuthFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
+        String requestId = RequestLogContext.start();
+        httpResponse.setHeader("X-Request-Id", requestId);
+        long started = System.nanoTime();
+
+        try {
+            doFilterInternal(httpRequest, httpResponse, chain);
+        } finally {
+            Object userId = httpRequest.getAttribute(USER_ID);
+            LOGGER.log(Level.INFO,
+                    "event=http.completed requestId={0} userId={1} method={2} path={3} status={4} durationMs={5}",
+                    new Object[]{requestId, userId == null ? "anonymous" : userId,
+                            httpRequest.getMethod(), resolveRequestPath(httpRequest), httpResponse.getStatus(),
+                            (System.nanoTime() - started) / 1_000_000L});
+            RequestLogContext.clear();
+        }
+    }
+
+    private void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
         request.setCharacterEncoding("UTF-8");
         response.setCharacterEncoding("UTF-8");
 
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-        HttpServletResponse httpResponse = (HttpServletResponse) response;
+        HttpServletRequest httpRequest = request;
+        HttpServletResponse httpResponse = response;
 
         httpResponse.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
         httpResponse.setHeader("X-Frame-Options", "DENY");
@@ -41,6 +68,7 @@ public class AuthFilter implements Filter {
             return;
         }
 
+        // REWORK
         // Skip authentication check for OPTIONS requests or public endpoints
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())
             || (isPublic(httpRequest) && !isAuthenticatedOAuthCallback(httpRequest))) {
@@ -158,6 +186,7 @@ public class AuthFilter implements Filter {
                 && request.getHeader("X-Scanner-API-Key") != null;
     }
 
+    // NEED TO REFACTOR
     private String resolveRequestPath(HttpServletRequest request) {
         String path = request.getPathInfo();
         if (path == null || path.isBlank()) {

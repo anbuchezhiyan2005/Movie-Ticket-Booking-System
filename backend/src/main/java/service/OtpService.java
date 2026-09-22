@@ -9,6 +9,7 @@ import jakarta.inject.Singleton;
 import model.OtpChallenge;
 import repository.OtpChallengeRepository;
 import util.HmacUtil;
+import util.RequestLogContext;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -51,9 +52,9 @@ public class OtpService {
         challenge.setLastSentAt(now);
         challenge.setMaxAttempts(MAX_ATTEMPTS);
         OtpChallenge saved = repository.save(challenge);
-        LOGGER.info(() -> "OTP challenge created purpose=" + purpose
-                + " userId=" + userId + " bookingId=" + bookingId
-                + " challengeId=" + saved.getId());
+        LOGGER.info("event=otp.challenge.created requestId=" + RequestLogContext.requestId()
+            + " purpose=" + purpose + " userId=" + userId + " bookingId=" + bookingId
+            + " challengeId=" + saved.getId());
         return new Challenge(saved.getId(), token, code, saved.getExpiresAt(),
             saved.getLastSentAt().plus(RESEND_COOLDOWN));
     }
@@ -70,6 +71,7 @@ public class OtpService {
         return create(userId, bookingId, purpose);
     }
 
+    // ONLY FOR TESTING
     public void verifyCode(String token, Long userId, Long bookingId, OtpPurpose purpose, String code) {
         if (token == null || token.isBlank() || code == null || code.isBlank()) {
             throw new ValidationException("OTP challenge and code are required");
@@ -88,6 +90,7 @@ public class OtpService {
 
     public boolean verifyCodeInTransaction(String token, Long userId, Long bookingId,
                                            OtpPurpose purpose, String code) {
+        // Can be included inside validateChallenge()
         if (token == null || token.isBlank() || code == null || code.isBlank()) {
             throw new ValidationException("OTP challenge and code are required");
         }
@@ -96,7 +99,8 @@ public class OtpService {
         validateChallenge(challenge, userId, bookingId, purpose);
         if (!HmacUtil.verify("otp:" + code, challenge.getOtpHash(), hashSecret)) {
             repository.incrementAttempts(challenge.getId());
-            LOGGER.warning(() -> "OTP verification rejected purpose=" + purpose
+                LOGGER.warning("event=otp.verification.failed requestId=" + RequestLogContext.requestId()
+                    + " purpose=" + purpose
                     + " userId=" + userId + " bookingId=" + bookingId
                     + " challengeId=" + challenge.getId()
                     + " reason=invalid_code");
@@ -104,7 +108,8 @@ public class OtpService {
                     return false;
         }
         repository.consume(challenge.getId(), LocalDateTime.now());
-        LOGGER.info(() -> "OTP verification succeeded purpose=" + purpose
+        LOGGER.info("event=otp.verification.succeeded requestId=" + RequestLogContext.requestId()
+            + " purpose=" + purpose
                 + " userId=" + userId + " bookingId=" + bookingId
                 + " challengeId=" + challenge.getId());
             return true;
@@ -113,7 +118,8 @@ public class OtpService {
     private void validateChallenge(OtpChallenge challenge, Long userId, Long bookingId, OtpPurpose purpose) {
         if (!userId.equals(challenge.getUserId()) || !purpose.equals(challenge.getPurpose())
                 || (bookingId == null ? challenge.getBookingId() != null : !bookingId.equals(challenge.getBookingId()))) {
-            LOGGER.warning(() -> "OTP verification rejected purpose=" + purpose
+                LOGGER.warning("event=otp.verification.failed requestId=" + RequestLogContext.requestId()
+                    + " purpose=" + purpose
                     + " userId=" + userId + " bookingId=" + bookingId
                     + " challengeId=" + challenge.getId() + " reason=scope_mismatch");
             throw new ValidationException("OTP challenge is invalid");
@@ -122,7 +128,8 @@ public class OtpService {
             throw new ValidationException("OTP challenge was already used");
         }
         if (LocalDateTime.now().isAfter(challenge.getExpiresAt())) {
-            LOGGER.warning(() -> "OTP verification rejected purpose=" + purpose
+                LOGGER.warning("event=otp.verification.failed requestId=" + RequestLogContext.requestId()
+                    + " purpose=" + purpose
                     + " userId=" + userId + " bookingId=" + bookingId
                     + " challengeId=" + challenge.getId() + " reason=expired");
             throw new ValidationException("OTP challenge has expired");
@@ -132,12 +139,14 @@ public class OtpService {
         }
     }
 
+    // HELPER
     private String randomToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    // HELPER
     public record Challenge(Long id, String token, String code, LocalDateTime expiresAt,
                             LocalDateTime resendAvailableAt) {
     }

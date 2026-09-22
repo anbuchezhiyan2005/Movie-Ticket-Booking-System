@@ -12,9 +12,13 @@ import repository.MovieRepository;
 import repository.TheatreRepository;
 
 import java.util.List;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class MovieService {
+
+    private static final Logger LOGGER = Logger.getLogger(MovieService.class.getName());
 
     private final MovieRepository movieRepository;
     private final TheatreRepository theatreRepository;
@@ -26,21 +30,30 @@ public class MovieService {
     }
 
     public List<MovieResponse> browseMovies() {
-        return movieRepository.findAll().stream()
+        List<MovieResponse> movies = movieRepository.findAll().stream()
                 .map(movie -> this.toMovieResponse(movie))
                 .toList();
+        LOGGER.info("event=movie.listed requestId=" + RequestLogContext.requestId()
+            + " count=" + movies.size());
+        return movies;
     }
 
     public MovieDetailsResponse getMovieDetails(Long movieId) {
         Movie movie = getMovie(movieId);
-        return toMovieDetailsResponse(movie);
+        MovieDetailsResponse response = toMovieDetailsResponse(movie);
+        LOGGER.info("event=movie.viewed requestId=" + RequestLogContext.requestId()
+            + " movieId=" + movieId);
+        return response;
     }
 
     public List<TheatreResponse> getTheatresShowingMovie(Long movieId) {
         getMovie(movieId);
-        return theatreRepository.findByMovieId(movieId).stream()
+        List<TheatreResponse> theatres = theatreRepository.findByMovieId(movieId).stream()
                 .map(theatre -> this.toTheatreResponse(theatre))
                 .toList();
+        LOGGER.info("event=movie.theatres.listed requestId=" + RequestLogContext.requestId()
+            + " movieId=" + movieId + " count=" + theatres.size());
+        return theatres;
     }
 
     public Movie getMovie(Long movieId) {

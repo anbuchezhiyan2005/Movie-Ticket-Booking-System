@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.StringJoiner;
 import java.util.Date;
 import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class OAuthProviderService {
@@ -55,7 +56,8 @@ public class OAuthProviderService {
                                    OAuthIntent intent, Long userId) {
         OAuthConfiguration.Provider configuration = OAuthConfiguration.forProvider(provider);
         if (provider == AuthProvider.TWITTER) {
-            LOGGER.info("OAuth authorization provider=TWITTER clientId="
+            LOGGER.info("event=oauth.provider.authorization_prepared requestId=" + RequestLogContext.requestId()
+                + " provider=TWITTER clientId="
                 + maskClientId(configuration.clientId())
                 + " redirectUri=" + configuration.redirectUri()
                 + " scope=users.read pkce=true");
@@ -92,7 +94,8 @@ public class OAuthProviderService {
 
         OAuthConfiguration.Provider configuration = OAuthConfiguration.forProvider(expectedProvider);
         if (expectedProvider == AuthProvider.TWITTER) {
-            LOGGER.info("OAuth token exchange provider=TWITTER clientId="
+            LOGGER.info("event=oauth.provider.token_exchange requestId=" + RequestLogContext.requestId()
+                + " provider=TWITTER clientId="
                 + maskClientId(configuration.clientId())
                 + " redirectUri=" + transaction.redirectUri()
                 + " codeVerifierPresent=" + (transaction.codeVerifier() != null)
@@ -100,7 +103,8 @@ public class OAuthProviderService {
         }
         JsonNode token = exchangeToken(expectedProvider, configuration, transaction, code);
         if (expectedProvider == AuthProvider.TWITTER) {
-            LOGGER.info("Twitter token response"
+                LOGGER.info("event=oauth.provider.token_received requestId=" + RequestLogContext.requestId()
+                    + " provider=TWITTER"
                     + " token_type=" + redactedField(token, "token_type")
                     + " expires_in=" + redactedField(token, "expires_in")
                     + " scope=" + redactedField(token, "scope")
@@ -243,7 +247,8 @@ public class OAuthProviderService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             JsonNode body = objectMapper.readTree(response.body());
             if (response.statusCode() / 100 != 2) {
-                LOGGER.warning("OAuth provider HTTP failure status=" + response.statusCode()
+                LOGGER.warning("event=oauth.provider.failed requestId=" + RequestLogContext.requestId()
+                    + " status=" + response.statusCode()
                         + " endpoint=" + request.uri()
                     + " error=" + safeProviderError(body)
                     + " body=" + boundedResponseBody(response.body()));

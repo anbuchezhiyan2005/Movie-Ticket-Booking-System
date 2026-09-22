@@ -22,9 +22,13 @@ import util.ShowTimes;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class TheatreService {
+
+    private static final Logger LOGGER = Logger.getLogger(TheatreService.class.getName());
 
     private final TheatreRepository theatreRepository;
     private final ScreenRepository screenRepository;
@@ -53,7 +57,10 @@ public class TheatreService {
         theatre.setTheatreName(request.getTheatreName().trim());
         theatre.setTheatreLocation(request.getTheatreLocation().trim());
         theatre.setAdminId(adminId);
-        return theatreRepository.save(theatre);
+        Theatre saved = theatreRepository.save(theatre);
+        LOGGER.info("event=theatre.created requestId=" + RequestLogContext.requestId()
+            + " theatreId=" + saved.getTheatreId() + " adminId=" + adminId);
+        return saved;
     }
 
     public void updateTheatre(Long theatreId, TheatreRequest request, Long adminId) {
@@ -66,6 +73,8 @@ public class TheatreService {
         theatre.setTheatreName(request.getTheatreName().trim());
         theatre.setTheatreLocation(request.getTheatreLocation().trim());
         theatreRepository.update(theatre);
+        LOGGER.info("event=theatre.updated requestId=" + RequestLogContext.requestId()
+            + " theatreId=" + theatreId + " adminId=" + adminId);
     }
 
     public void deleteTheatre(Long theatreId, Long adminId) {
@@ -77,12 +86,17 @@ public class TheatreService {
             throw new ConflictException("Delete screens (and their ended shows) before deleting the theatre");
         }
         theatreRepository.deleteById(theatreId);
+        LOGGER.info("event=theatre.deleted requestId=" + RequestLogContext.requestId()
+            + " theatreId=" + theatreId + " adminId=" + adminId);
     }
 
     public List<TheatreResponse> getMyTheatres(Long adminId) {
-        return theatreRepository.findByAdminId(adminId).stream()
+        List<TheatreResponse> theatres = theatreRepository.findByAdminId(adminId).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+        LOGGER.info("event=theatre.listed requestId=" + RequestLogContext.requestId()
+            + " adminId=" + adminId + " count=" + theatres.size());
+        return theatres;
     }
 
     public TheatreResponse toResponse(Theatre theatre) {

@@ -23,6 +23,7 @@ import service.OtpEmailService;
 import service.OtpService;
 import config.EnvironmentConfig;
 import util.RequestUsers;
+import util.RequestLogContext;
 
 import java.util.logging.Logger;
 
@@ -60,7 +61,9 @@ public class OtpResource {
             return new BookingOtpResponse(booking, challenge.token(), mask(user.getEmail()),
                     challenge.expiresAt(), challenge.resendAvailableAt(), simulationOtp(challenge));
         } catch (RuntimeException error) {
-            LOGGER.warning("Booking OTP email failed; releasing booking hold bookingId=" + booking.getBookingId());
+                LOGGER.warning("event=booking.otp.failed requestId=" + RequestLogContext.requestId()
+                    + " userId=" + userId + " bookingId=" + booking.getBookingId()
+                    + " reason=email_delivery_failed");
             bookingService.expireBookingHold(booking.getBookingId(), userId);
             throw error;
         }
@@ -69,7 +72,7 @@ public class OtpResource {
     @POST
     @Path("/{id}/otp/verify")
     public BookingResponse verifyBookingOtp(@PathParam("id") Long bookingId,
-                                            OtpVerifyRequest body,
+                                            OtpVerifyRequest body, // Why do we need a body here? What's the alternate? 
                                             @Context HttpServletRequest request) throws java.sql.SQLException {
         Long userId = RequestUsers.requireCustomer(request);
         return bookingService.confirmHeldBookingWithOtp(bookingId, userId,
@@ -129,21 +132,25 @@ public class OtpResource {
             simulationOtp(challenge));
     }
 
+    // HELPER 
     private void deliverOtp(String email, String code, String purpose) {
         if (!simulationMode()) {
             otpEmailService.send(email, code, purpose);
         }
     }
 
+    // HELPER
     private String simulationOtp(OtpService.Challenge challenge) {
         return simulationMode() ? challenge.code() : null;
     }
 
+    // HELPER
     private boolean simulationMode() {
         return "SIMULATION".equalsIgnoreCase(
                 EnvironmentConfig.get("OTP_DELIVERY_MODE", "SMTP"));
     }
 
+    // HELPER
     private String mask(String email) {
         int at = email == null ? -1 : email.indexOf('@');
         return at <= 1 ? "***" : email.charAt(0) + "***" + email.substring(at);

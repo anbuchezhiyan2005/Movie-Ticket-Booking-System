@@ -48,10 +48,11 @@ public class BookingExpiryScheduler {
             try {
                 runOnce();
             } catch (SQLException e) {
-                LOGGER.log(Level.WARNING, "Pending booking expiry failed", e);
+                LOGGER.log(Level.WARNING,
+                    "event=system.error requestId=REQ-unknown location=booking.expiry.scheduler", e);
             }
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
-        LOGGER.info(() -> "Booking expiry scheduler started intervalSeconds="
+        LOGGER.info("event=booking.expiry.scheduler.started requestId=REQ-unknown intervalSeconds="
             + intervalSeconds);
     }
 
@@ -64,10 +65,14 @@ public class BookingExpiryScheduler {
 
     // Triggers the expiry logic in BookingService
     private void runOnce() throws SQLException {
+        long started = System.nanoTime();
         try {
             bookingService.expirePendingBookings();
+            LOGGER.info("event=booking.expiry.completed durationMs="
+                + ((System.nanoTime() - started) / 1_000_000L));
         } catch (RuntimeException e) {
-            LOGGER.log(Level.WARNING, "Pending booking expiry failed (is MySQL running?)", e);
+            LOGGER.log(Level.WARNING,
+                "event=system.error requestId=REQ-unknown location=booking.expiry.operation", e);
         }
     }
 }

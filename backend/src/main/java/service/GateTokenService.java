@@ -5,13 +5,17 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import repository.BookingGateTokenRepository;
 import util.HmacUtil;
+import util.RequestLogContext;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.logging.Logger;
 
 @Singleton
 public class GateTokenService {
+
+    private static final Logger LOGGER = Logger.getLogger(GateTokenService.class.getName());
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String TOKEN_PATH = "/scanner/tickets/redeem";
@@ -39,6 +43,8 @@ public class GateTokenService {
         String payload = "t=" + token;
         String signature = HmacUtil.sign(payload, hmacSecret);
         tokenRepository.save(bookingId, HmacUtil.sha256(token), expiresAt);
+        LOGGER.info("event=gate.token.issued requestId=" + RequestLogContext.requestId()
+            + " bookingId=" + bookingId + " expiresAt=" + expiresAt);
         return scannerBaseUrl + TOKEN_PATH + "?" + payload + "&sig=" + signature;
     }
 }

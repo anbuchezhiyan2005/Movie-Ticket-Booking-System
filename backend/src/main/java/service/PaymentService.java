@@ -1,14 +1,17 @@
 package service;
 
-import exception.NotFoundException;
 import exception.ValidationException;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import model.User;
 import repository.UserRepository;
+import util.RequestLogContext;
+
+import java.util.logging.Logger;
 
 @Singleton
 public class PaymentService {
+
+    private static final Logger LOGGER = Logger.getLogger(PaymentService.class.getName());
 
     private final UserRepository userRepository;
 
@@ -18,16 +21,17 @@ public class PaymentService {
     }
 
     public void processPayment(Long customerId, Long adminId, int amount) {
-        validateAmount(amount);
-
-        User customer = getUser(customerId);
-        User admin = getUser(adminId);
+        if (amount <= 0) {
+            throw new ValidationException("Payment amount must be greater than zero");
+        }
 
         if (!userRepository.debitWalletBalance(customerId, amount)) {
             throw new ValidationException("Insufficient wallet balance");
         }
 
         userRepository.creditWalletBalance(adminId, amount);
+        LOGGER.info("event=payment.charged requestId=" + RequestLogContext.requestId()
+            + " customerId=" + customerId + " adminId=" + adminId + " amount=" + amount);
     }
 
     public void refundPayment(Long customerId, Long adminId, int refundAmount) {
@@ -38,24 +42,13 @@ public class PaymentService {
             return;
         }
 
-        User customer = getUser(customerId);
-        User admin = getUser(adminId);
-
         if (!userRepository.debitWalletBalance(adminId, refundAmount)) {
             throw new ValidationException("Admin wallet has insufficient balance for refund");
         }
 
         userRepository.creditWalletBalance(customerId, refundAmount);
+        LOGGER.info("event=payment.refunded requestId=" + RequestLogContext.requestId()
+            + " customerId=" + customerId + " adminId=" + adminId + " amount=" + refundAmount);
     }
 
-    private User getUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new NotFoundException("User not found"));
-    }
-
-    private void validateAmount(int amount) {
-        if (amount <= 0) {
-            throw new ValidationException("Payment amount must be greater than zero");
-        }
-    }
 }

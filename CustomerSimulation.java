@@ -39,6 +39,7 @@ public class CustomerSimulation extends Simulation {
     private final Long showId;
     private final int ticketCost;
     private final TestCustomer customer;
+    private final String customerLabel;
     private final SimulationLogger logger;
     private final CookieManager cookieManager =
         new CookieManager(null, CookiePolicy.ACCEPT_ALL);
@@ -58,6 +59,7 @@ public class CustomerSimulation extends Simulation {
             int initialWalletBalance,
             int ticketCost,
             TestCustomer customer,
+            int customerNumber,
             SimulationLogger logger) {
         this.baseUrl = baseUrl;
         this.movieTitle = movieTitle;
@@ -65,11 +67,13 @@ public class CustomerSimulation extends Simulation {
         this.walletBalance = initialWalletBalance;
         this.ticketCost = ticketCost;
         this.customer = customer;
+        this.customerLabel = "Customer No. " + customerNumber;
         this.logger = logger;
     }
 
     public CustomerResult runWorkflow() {
         boolean loggedIn = false;
+        Thread.currentThread().setName(customerLabel);
 
         try {
             login(new LoginInput(customer.email(), customer.password()));
@@ -81,7 +85,7 @@ public class CustomerSimulation extends Simulation {
                     + SEAT_RETRY_TIMEOUT_MILLIS;
 
             while (System.currentTimeMillis() < retryDeadline) {
-                List<SeatResult> seatMap = getAvailableSeats();
+                List<SeatResult> seatMap = getSeatMap();
                 boolean hasAvailable = hasAvailableSeats(seatMap);
                 boolean hasHeld = hasHeldSeats(seatMap);
 
@@ -139,8 +143,7 @@ public class CustomerSimulation extends Simulation {
                         );
 
                         logger.log(
-                            java.time.Instant.now().toString(),
-                            Thread.currentThread().getName(),
+                            customerLabel,
                             "CANCELLATION_COMPLETE",
                             "bookingId=" + cancellation.bookingId()
                                 + " refund=" + cancellation.refundAmount()
@@ -159,8 +162,7 @@ public class CustomerSimulation extends Simulation {
                         throw exception;
                     }
                     logger.log(
-                            java.time.Instant.now().toString(),
-                            Thread.currentThread().getName(),
+                            customerLabel,
                             "BOOKING_RETRY",
                             "Seat conflict; refreshing seat map"
                     );
@@ -177,8 +179,7 @@ public class CustomerSimulation extends Simulation {
             );
         } catch (Exception exception) {
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "WORKFLOW",
                     "FAILED: " + exception.getMessage()
             );
@@ -187,8 +188,7 @@ public class CustomerSimulation extends Simulation {
                     logout();
                 } catch (Exception logoutException) {
                     logger.log(
-                            java.time.Instant.now().toString(),
-                            Thread.currentThread().getName(),
+                            customerLabel,
                             "LOGOUT",
                             "FAILED during cleanup: "
                                     + logoutException.getMessage()
@@ -268,10 +268,9 @@ public class CustomerSimulation extends Simulation {
         // Confirm the response is successful and return the created user.
         if(response.statusCode() != 201) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "Register",
-                "Failed with status code: " + response.statusCode()
+                "registration failed with status code " + response.statusCode()
             );
 
             throw new IllegalStateException(
@@ -280,10 +279,9 @@ public class CustomerSimulation extends Simulation {
         }
 
         logger.log(
-            java.time.Instant.now().toString(),
-            Thread.currentThread().getName(),
-            "Register",
-            "Successful registration"
+            customerLabel,
+            "REGISTER",
+            "has registered successfully"
         );
 
         return new RegisterResult(
@@ -315,8 +313,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "LOGIN",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -331,8 +328,7 @@ public class CustomerSimulation extends Simulation {
             walletBalance = responseJson.getInt("walletBalance");
 
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "LOGIN",
                 "SUCCESS userId=" + userId
             );
@@ -340,8 +336,7 @@ public class CustomerSimulation extends Simulation {
             return new LoginResult(userId, csrfToken);
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "LOGIN",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -349,8 +344,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "LOGIN",
                 "INTERRUPTED"
             );
@@ -375,8 +369,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_MOVIE",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -396,8 +389,7 @@ public class CustomerSimulation extends Simulation {
                     Long movieId = movie.getLong("movieId");
 
                     logger.log(
-                        java.time.Instant.now().toString(),
-                        Thread.currentThread().getName(),
+                        customerLabel,
                         "FIND_MOVIE",
                         "SUCCESS movieId=" + movieId + " title=" + movieName
                     );
@@ -408,8 +400,7 @@ public class CustomerSimulation extends Simulation {
             }
 
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_MOVIE",
                 "FAILED movie not found: " + movieTitle
             );
@@ -418,8 +409,7 @@ public class CustomerSimulation extends Simulation {
             );
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_MOVIE",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -427,8 +417,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_MOVIE",
                 "INTERRUPTED"
             );
@@ -459,8 +448,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_SHOW",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -479,8 +467,7 @@ public class CustomerSimulation extends Simulation {
                 selectedShowTime = LocalDateTime.parse(showTiming);
 
                 logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "FIND_SHOW",
                     "SUCCESS showId=" + currentShowId
                 );
@@ -490,16 +477,14 @@ public class CustomerSimulation extends Simulation {
             }
 
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_SHOW",
                 "FAILED show not found: " + showId
             );
             throw new IllegalStateException("Show not found: " + showId);
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_SHOW",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -507,8 +492,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "FIND_SHOW",
                 "INTERRUPTED"
             );
@@ -518,7 +502,7 @@ public class CustomerSimulation extends Simulation {
 
     @Override
     /** Requests the complete seat map from GET /api/shows/{showId}/seats. */
-    protected List<SeatResult> getAvailableSeats() {
+    protected List<SeatResult> getSeatMap() {
         String endpoint = baseUrl + "/shows/" + showId + "/seats";
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
@@ -533,8 +517,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
                 logger.log(
-                        java.time.Instant.now().toString(),
-                        Thread.currentThread().getName(),
+                        customerLabel,
                         "GET_AVAILABLE_SEATS",
                         "FAILED HTTP " + response.statusCode()
                 );
@@ -543,22 +526,42 @@ public class CustomerSimulation extends Simulation {
                 );
             }
 
-            JSONArray seats = new JSONArray(response.body());
+            JSONObject seatLayout = new JSONObject(response.body());
+            String rowRange = seatLayout.getString("rowRange");
+            int seatsPerRow = seatLayout.getInt("seatsPerRow");
+            JSONObject occupiedSeats = seatLayout.optJSONObject("occupiedSeats");
+            String[] rowBounds = rowRange.split("-");
+            if (rowBounds.length != 2 || rowBounds[0].trim().isEmpty()
+                    || rowBounds[1].trim().isEmpty() || seatsPerRow <= 0) {
+                throw new IllegalStateException("Invalid seat layout: " + rowRange);
+            }
+
+            char firstRow = rowBounds[0].trim().toUpperCase(Locale.ROOT).charAt(0);
+            char lastRow = rowBounds[1].trim().toUpperCase(Locale.ROOT).charAt(0);
+            if (firstRow > lastRow) {
+                throw new IllegalStateException("Invalid seat row range: " + rowRange);
+            }
+
             List<SeatResult> seatMap = new ArrayList<>();
 
-            for (int index = 0; index < seats.length(); index++) {
-                JSONObject seat = seats.getJSONObject(index);
-                seatMap.add(new SeatResult(
-                        seat.getString("rowLabel"),
-                        seat.getInt("seatNumber"),
-                        seat.getString("status"),
-                        seat.getBoolean("available")
-                ));
+            for (char row = firstRow; row <= lastRow; row++) {
+                for (int seatNumber = 1; seatNumber <= seatsPerRow; seatNumber++) {
+                    String seatKey = row + "-" + seatNumber;
+                    String status = occupiedSeats == null
+                            ? "AVAILABLE"
+                            : occupiedSeats.optString(seatKey, "AVAILABLE");
+                    boolean available = "AVAILABLE".equalsIgnoreCase(status);
+                    seatMap.add(new SeatResult(
+                            String.valueOf(row),
+                            seatNumber,
+                            status,
+                            available
+                    ));
+                }
             }
 
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "GET_AVAILABLE_SEATS",
                     "SUCCESS showId=" + showId
                             + " available=" + seatMap.stream()
@@ -571,8 +574,7 @@ public class CustomerSimulation extends Simulation {
             return seatMap;
         } catch (IOException exception) {
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "GET_AVAILABLE_SEATS",
                     "FAILED I/O: " + exception.getMessage()
             );
@@ -580,8 +582,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "GET_AVAILABLE_SEATS",
                     "INTERRUPTED"
             );
@@ -614,8 +615,7 @@ public class CustomerSimulation extends Simulation {
         );
 
         logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "CHOOSE_SEATS",
                 "SUCCESS showId=" + showId + " selected=" + selectedSeats.size()
         );
@@ -651,8 +651,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() == 409) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "REQUEST_BOOKING_OTP",
                 "SEAT_CONFLICT"
             );
@@ -663,8 +662,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
                 logger.log(
-                        java.time.Instant.now().toString(),
-                        Thread.currentThread().getName(),
+                        customerLabel,
                         "REQUEST_BOOKING_OTP",
                         "FAILED HTTP " + response.statusCode()
                 );
@@ -683,8 +681,7 @@ public class CustomerSimulation extends Simulation {
             );
 
                 logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "WALLET_BEFORE_BOOKING",
                     "balance=" + walletBalance + " ticketCost=" + ticketCost
                         + " seats=" + input.seats().size()
@@ -692,16 +689,14 @@ public class CustomerSimulation extends Simulation {
                 );
 
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "REQUEST_BOOKING_OTP",
                     "SUCCESS bookingId=" + result.bookingId()
             );
             return result;
         } catch (IOException exception) {
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "REQUEST_BOOKING_OTP",
                     "FAILED I/O: " + exception.getMessage()
             );
@@ -709,8 +704,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                customerLabel,
                     "REQUEST_BOOKING_OTP",
                     "INTERRUPTED"
             );
@@ -762,8 +756,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
                 logger.log(
-                        java.time.Instant.now().toString(),
-                        Thread.currentThread().getName(),
+                        customerLabel,
                         "VERIFY_BOOKING_OTP",
                         "FAILED HTTP " + response.statusCode()
                 );
@@ -783,16 +776,14 @@ public class CustomerSimulation extends Simulation {
                 int balanceBeforeBooking = walletBalance;
                 walletBalance -= bookingAmount;
                 logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "WALLET_AFTER_BOOKING",
                     "before=" + balanceBeforeBooking + " debit=" + bookingAmount
                         + " after=" + walletBalance
                 );
 
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "VERIFY_BOOKING_OTP",
                     "SUCCESS bookingId=" + result.bookingId()
                             + " status=" + result.status()
@@ -800,8 +791,7 @@ public class CustomerSimulation extends Simulation {
             return result;
         } catch (IOException exception) {
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "VERIFY_BOOKING_OTP",
                     "FAILED I/O: " + exception.getMessage()
             );
@@ -811,8 +801,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "VERIFY_BOOKING_OTP",
                     "INTERRUPTED"
             );
@@ -845,8 +834,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 200) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "REQUEST_CANCELLATION_OTP",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -865,23 +853,20 @@ public class CustomerSimulation extends Simulation {
             );
 
                 logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "WALLET_BEFORE_CANCELLATION",
                     "balance=" + walletBalance + " expectedRefund=" + refundAmount
                 );
 
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "REQUEST_CANCELLATION_OTP",
                 "SUCCESS bookingId=" + bookingId
             );
             return result;
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "REQUEST_CANCELLATION_OTP",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -891,8 +876,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "REQUEST_CANCELLATION_OTP",
                 "INTERRUPTED"
             );
@@ -933,8 +917,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 204) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "VERIFY_CANCELLATION_OTP",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -951,23 +934,20 @@ public class CustomerSimulation extends Simulation {
                 int balanceBeforeCancellation = walletBalance;
                 walletBalance += result.refundAmount();
                 logger.log(
-                    java.time.Instant.now().toString(),
-                    Thread.currentThread().getName(),
+                    customerLabel,
                     "WALLET_AFTER_CANCELLATION",
                     "before=" + balanceBeforeCancellation + " credit="
                         + result.refundAmount() + " after=" + walletBalance
                 );
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                    customerLabel,
                 "VERIFY_CANCELLATION_OTP",
                 "SUCCESS bookingId=" + input.bookingId()
             );
             return result;
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "VERIFY_CANCELLATION_OTP",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -977,8 +957,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                    customerLabel,
                 "VERIFY_CANCELLATION_OTP",
                 "INTERRUPTED"
             );
@@ -1006,8 +985,7 @@ public class CustomerSimulation extends Simulation {
 
             if (response.statusCode() != 204) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                    customerLabel,
                 "LOGOUT",
                 "FAILED HTTP " + response.statusCode()
             );
@@ -1019,15 +997,13 @@ public class CustomerSimulation extends Simulation {
             cookieManager.getCookieStore().removeAll();
             csrfToken = null;
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                    customerLabel,
                 "LOGOUT",
                 "SUCCESS"
             );
         } catch (IOException exception) {
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                    customerLabel,
                 "LOGOUT",
                 "FAILED I/O: " + exception.getMessage()
             );
@@ -1035,8 +1011,7 @@ public class CustomerSimulation extends Simulation {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logger.log(
-                java.time.Instant.now().toString(),
-                Thread.currentThread().getName(),
+                customerLabel,
                 "LOGOUT",
                 "INTERRUPTED"
             );

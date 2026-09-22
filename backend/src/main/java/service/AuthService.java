@@ -19,9 +19,14 @@ import repository.UserRepository;
 import util.PasswordHasher;
 
 import java.sql.SQLException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class AuthService {
+
+    private static final Logger LOGGER = Logger.getLogger(AuthService.class.getName());
 
     public static final int CUSTOMER_STARTING_BALANCE = 10000;
     public static final int ADMIN_STARTING_BALANCE = 0;
@@ -42,7 +47,10 @@ public class AuthService {
     public User register(RegisterRequest request) {
         request.setRole("CUSTOMER");
         validateRegister(request);
-        return registerUser(request, Role.CUSTOMER);
+        User user = registerUser(request, Role.CUSTOMER);
+        LOGGER.info("event=auth.register.succeeded requestId=" + RequestLogContext.requestId()
+            + " userId=" + user.getId() + " role=" + user.getRole());
+        return user;
     }
 
     public User registerAdmin(RegisterRequest request) {
@@ -57,21 +65,37 @@ public class AuthService {
             throw new ValidationException("Invalid admin access code");
         }
 
-        return registerUser(request, Role.ADMIN);
+        User user = registerUser(request, Role.ADMIN);
+        LOGGER.info("event=auth.register.succeeded requestId=" + RequestLogContext.requestId()
+            + " userId=" + user.getId() + " role=" + user.getRole());
+        return user;
     }
 
     public User login(LoginRequest request) {
         if (request == null || isBlank(request.getEmail()) || isBlank(request.getPassword())) {
+            logLoginFailure("missing_credentials");
             throw new ValidationException("Email and password are required");
         }
 
         User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+                .orElseThrow(() -> {
+                    logLoginFailure("invalid_credentials");
+                    return new UnauthorizedException("Invalid email or password");
+                });
 
         if (!PasswordHasher.matches(request.getPassword(), user.getPasswordHash())) {
+            logLoginFailure("invalid_credentials");
             throw new UnauthorizedException("Invalid email or password");
         }
+        LOGGER.log(Level.INFO, "event=auth.login.succeeded requestId={0} userId={1} role={2}",
+                new Object[]{RequestLogContext.requestId(), user.getId(), user.getRole()});
         return user;
+    }
+
+    // NEED TO REFACTOR
+    private void logLoginFailure(String reason) {
+        LOGGER.log(Level.WARNING, "event=auth.login.failed requestId={0} userId=anonymous reason={1} status=401",
+                new Object[]{RequestLogContext.requestId(), reason});
     }
 
     public User getById(Long userId) {
@@ -97,7 +121,7 @@ public class AuthService {
         }
 
         try {
-            return Database.inTransaction(() -> {
+            User socialUser = Database.inTransaction(() -> {
                 var transactionIdentity = userIdentityRepository.findByProviderSubject(provider, profile.subject());
                 if (transactionIdentity.isPresent()) {
                     User user = getById(transactionIdentity.get().getUserId());
@@ -112,24 +136,27 @@ public class AuthService {
                     throw new ConflictException("An account already uses this email; log in and link the provider");
                 }
 
-                User user = new User();
-                user.setName(firstNonBlank(profile.displayName(), "Customer"));
-                user.setEmail(email == null ? provider.name().toLowerCase() + "_" + profile.subject() + "@users.invalid" : email);
-                user.setPhoneNumber(null);
-                user.setPasswordHash(null);
-                user.setRole(Role.CUSTOMER);
-                user.setWalletBalance(CUSTOMER_STARTING_BALANCE);
-                user = userRepository.save(user);
+                User createdUser = new User();
+                createdUser.setName(firstNonBlank(profile.displayName(), "Customer"));
+                createdUser.setEmail(email == null ? provider.name().toLowerCase() + "_" + profile.subject() + "@users.invalid" : email);
+                createdUser.setPhoneNumber(null);
+                createdUser.setPasswordHash(null);
+                createdUser.setRole(Role.CUSTOMER);
+                createdUser.setWalletBalance(CUSTOMER_STARTING_BALANCE);
+                createdUser = userRepository.save(createdUser);
 
                 UserIdentity identity = new UserIdentity();
-                identity.setUserId(user.getId());
+                identity.setUserId(createdUser.getId());
                 identity.setProvider(provider);
                 identity.setProviderSubject(profile.subject());
                 identity.setProviderEmail(profile.email());
                 identity.setDisplayName(profile.displayName());
                 userIdentityRepository.save(identity);
-                return user;
-            });
+                return createdUser;
+                });
+                LOGGER.info("event=auth.oauth.succeeded requestId=" + RequestLogContext.requestId()
+                    + " provider=" + provider + " userId=" + socialUser.getId() + " intent=sign_in");
+                return socialUser;
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not create social customer", exception);
         } catch (RuntimeException exception) {
@@ -157,7 +184,7 @@ public class AuthService {
         }
 
         try {
-            return Database.inTransaction(() -> {
+            User linkedUser = Database.inTransaction(() -> {
                 var existing = userIdentityRepository.findByProviderSubject(provider, profile.subject());
                 if (existing.isPresent()) {
                     if (!userId.equals(existing.get().getUserId())) {
@@ -180,7 +207,10 @@ public class AuthService {
                 identity.setDisplayName(profile.displayName());
                 userIdentityRepository.save(identity);
                 return currentUser;
-            });
+                });
+                LOGGER.info("event=auth.oauth.linked requestId=" + RequestLogContext.requestId()
+                    + " provider=" + provider + " userId=" + linkedUser.getId());
+                return linkedUser;
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not link social account", exception);
         }

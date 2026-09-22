@@ -21,10 +21,13 @@ import util.ShowTimes;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.logging.Logger;
+import util.RequestLogContext;
 
 @Singleton
 public class ShowService {
+
+    private static final Logger LOGGER = Logger.getLogger(ShowService.class.getName());
 
     private final ShowRepository showRepository;
     private final MovieRepository movieRepository;
@@ -64,7 +67,11 @@ public class ShowService {
         show.setMovieId(movie.getMovieId());
         show.setScreenId(screen.getScreenId());
         show.setShowTiming(request.getShowTiming());
-        return showRepository.save(show);
+        Show saved = showRepository.save(show);
+        LOGGER.info("event=show.created requestId=" + RequestLogContext.requestId()
+            + " showId=" + saved.getShowId() + " movieId=" + saved.getMovieId()
+            + " screenId=" + saved.getScreenId() + " adminId=" + adminId);
+        return saved;
     }
 
     public void updateShow(Long showId, ShowRequest request, Long adminId) {
@@ -94,6 +101,8 @@ public class ShowService {
         show.setScreenId(newScreen.getScreenId());
         show.setShowTiming(request.getShowTiming());
         showRepository.update(show);
+        LOGGER.info("event=show.updated requestId=" + RequestLogContext.requestId()
+            + " showId=" + showId + " adminId=" + adminId);
     }
 
     public void deleteShow(Long showId, Long adminId) {
@@ -102,27 +111,36 @@ public class ShowService {
 
     public List<ShowResponse> getShowsForMovie(Long movieId) {
         getMovie(movieId);
-        return showRepository.findByMovieId(movieId).stream()
+        List<ShowResponse> shows = showRepository.findByMovieId(movieId).stream()
                 .map(show -> this.toShowResponse(show))
                 .toList();
+        LOGGER.info("event=show.listed requestId=" + RequestLogContext.requestId()
+            + " movieId=" + movieId + " count=" + shows.size());
+        return shows;
     }
 
     public List<ShowResponse> getShowsForScreen(Long screenId) {
         getScreen(screenId);
-        return showRepository.findByScreenId(screenId).stream()
+        List<ShowResponse> shows = showRepository.findByScreenId(screenId).stream()
                 .map(show -> this.toShowResponse(show))
                 .toList();
+        LOGGER.info("event=show.listed requestId=" + RequestLogContext.requestId()
+            + " screenId=" + screenId + " count=" + shows.size());
+        return shows;
     }
 
     public List<ShowResponse> getShowsForTheatre(Long theatreId, Long adminId) {
         Theatre theatre = getTheatre(theatreId);
         verifyOwnership(theatre, adminId);
 
-        return screenRepository.findByTheatreId(theatreId).stream()
+        List<ShowResponse> shows = screenRepository.findByTheatreId(theatreId).stream()
                 .flatMap(screen -> showRepository.findByScreenId(screen.getScreenId()).stream())
                 .filter(show -> this.hasNotEnded(show))
                 .map(show -> this.toShowResponse(show))
                 .toList();
+        LOGGER.info("event=show.listed requestId=" + RequestLogContext.requestId()
+            + " theatreId=" + theatreId + " adminId=" + adminId + " count=" + shows.size());
+        return shows;
     }
 
     public List<ShowResponse> getShowsForScreen(Long screenId, Long adminId) {
@@ -130,10 +148,13 @@ public class ShowService {
         Theatre theatre = getTheatre(screen.getTheatreId());
         verifyOwnership(theatre, adminId);
 
-        return showRepository.findByScreenId(screenId).stream()
+        List<ShowResponse> shows = showRepository.findByScreenId(screenId).stream()
                 .filter(show -> this.hasNotEnded(show))
                 .map(show -> this.toShowResponse(show))
                 .toList();
+        LOGGER.info("event=show.listed requestId=" + RequestLogContext.requestId()
+            + " screenId=" + screenId + " adminId=" + adminId + " count=" + shows.size());
+        return shows;
     }
 
     private boolean hasNotEnded(Show show) {

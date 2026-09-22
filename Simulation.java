@@ -30,11 +30,12 @@ public abstract class Simulation {
         System.out.println("Show ID: " + showId);
 
         try(SimulationLogger logger = new SimulationLogger("simulation.log")) {
-            logger.log(java.time.Instant.now().toString(), "MainThread", "Simulation started", "START");
+            logger.log("Simulation", "START", "simulation has started");
             List<TestCustomer> customers = createTestCustomers(customerCount);
             List<CustomerSimulation> simulations = new ArrayList<>();
 
-            for (TestCustomer customer : customers) {
+            for (int index = 0; index < customers.size(); index++) {
+                TestCustomer customer = customers.get(index);
                 CustomerSimulation simulation =
                         new CustomerSimulation(
                             baseUrl, 
@@ -43,6 +44,7 @@ public abstract class Simulation {
                             initialWalletBalance,
                             ticketCost,
                             customer, 
+                            index + 1,
                             logger
                         );
                 try {
@@ -75,7 +77,7 @@ public abstract class Simulation {
                 executor.shutdown();
             }
             
-            logger.log(java.time.Instant.now().toString(), "MainThread", "Simulation finished", "END");
+            logger.log("Simulation", "END", "simulation has finished");
         }
 
         System.out.println("Simulation skeleton finished");
@@ -102,7 +104,7 @@ public abstract class Simulation {
 
     protected abstract ShowResult findShow();
 
-    protected abstract List<SeatResult> getAvailableSeats();
+    protected abstract List<SeatResult> getSeatMap();
 
     protected abstract SeatSelectionResult chooseSeats(List<SeatResult> availableSeats);
 
@@ -152,5 +154,10 @@ public abstract class Simulation {
 
     public record CustomerResult(String customerEmail, boolean successful, String message) {}
 
-    public record LogEntry(String timestamp, String threadName, String action, String result) {}
+        public record LogEntry(
+            java.time.Instant timestamp,
+            String customerLabel,
+            String action,
+            String message
+        ) {}
 }
