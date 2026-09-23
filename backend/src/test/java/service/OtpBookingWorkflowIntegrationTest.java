@@ -271,7 +271,6 @@ class OtpBookingWorkflowIntegrationTest {
                 new BookingRepository(),
                 new UserRepository(),
                 new repository.ShowRepository(),
-                new repository.MovieRepository(),
                 new repository.ScreenRepository(),
                 new repository.TheatreRepository(),
                 new ShowSeatRepository(),

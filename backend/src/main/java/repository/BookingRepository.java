@@ -88,26 +88,6 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
-    // Retrieves all bookings made by a specific user
-    public List<Booking> findByUserId(Long userId) {
-        return execute(connection -> {
-            String sql = """
-                    SELECT booking_id, user_id, show_id, booking_time, status, total_amount, expires_at
-                    FROM bookings WHERE user_id = ?
-                    """;
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setLong(1, userId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    List<Booking> bookings = new ArrayList<>();
-                    while (rs.next()) {
-                        bookings.add(map(rs));
-                    }
-                    return bookings;
-                }
-            }
-        });
-    }
-
     public List<BookingWithSeats> findRecentByUserIdWithSeats(Long userId, int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("Booking limit must be positive");
@@ -188,27 +168,6 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
-    // Finds bookings that are still PENDING and have passed their expiry time
-    public List<Booking> findExpiredPending(LocalDateTime now) {
-        return execute(connection -> {
-            String sql = """
-                    SELECT booking_id, user_id, show_id, booking_time, status, total_amount, expires_at
-                    FROM bookings
-                    WHERE status IN ('PENDING', 'AWAITING_OTP') AND expires_at IS NOT NULL AND expires_at < ?
-                    """;
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setTimestamp(1, Timestamp.valueOf(now));
-                try (ResultSet rs = ps.executeQuery()) {
-                    List<Booking> bookings = new ArrayList<>();
-                    while (rs.next()) {
-                        bookings.add(map(rs));
-                    }
-                    return bookings;
-                }
-            }
-        });
-    }
-
     public void expirePendingBookings(LocalDateTime now) {
         execute(connection -> {
             String sql = """
@@ -226,7 +185,7 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
-    // Checks if any bookings exist for a specific show
+    // TESTING ONLY
     public boolean existsByShowId(Long showId) {
         return execute(connection -> {
             String sql = "SELECT 1 FROM bookings WHERE show_id = ? LIMIT 1";
@@ -239,6 +198,7 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
+    // TESTING ONLY
     public boolean existsActiveBookingForShow(Long showId) {
         return execute(connection -> {
             String sql = "SELECT 1 FROM bookings WHERE show_id = ? AND status NOT IN ('CANCELLED', 'EXPIRED') LIMIT 1";
@@ -251,6 +211,7 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
+    // TESTING ONLY
     public boolean existsConfirmedBookingForShow(Long showId) {
         return execute(connection -> {
             String sql = "SELECT 1 FROM bookings WHERE show_id = ? AND status = 'CONFIRMED' LIMIT 1";
@@ -279,23 +240,6 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
-    public boolean existsByTheatreId(Long theatreId) {
-        return execute(connection -> {
-            String sql = """
-                    SELECT 1 FROM bookings b
-                    JOIN shows s ON s.show_id = b.show_id
-                    JOIN screens sc ON sc.screen_id = s.screen_id
-                    WHERE sc.theatre_id = ? LIMIT 1
-                    """;
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setLong(1, theatreId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    return rs.next();
-                }
-            }
-        });
-    }
-
     public boolean existsConfirmedBookingForTheatre(Long theatreId) {
         return execute(connection -> {
             String sql = """
@@ -313,7 +257,6 @@ public class BookingRepository extends JdbcSupport {
         });
     }
 
-    // Updates an existing booking's status, amount, and expiry time
     public void update(Booking booking) {
         execute(connection -> {
             String sql = """

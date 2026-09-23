@@ -15,6 +15,7 @@ let cancellationOtp;
 let cancellationOtpTimer;
 let bookingOtp;
 let bookingOtpTimer;
+let pendingHoldSeats = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 const notice = $('#notice');
@@ -410,6 +411,10 @@ function buildSeatGrid(list, showId, layout) {
 
 function applyOccupiedSeats(occupiedSeats) {
     const removedSeats = [];
+    const ownHeldSeats = new Set([
+        ...pendingHoldSeats,
+        ...(bookingOtp?.booking?.seats ?? []).map((s) => `${s.rowLabel}-${s.seatNumber}`)
+    ]);
     document.querySelectorAll('.seat-list .seat').forEach((button) => {
         const key = button.dataset.seat;
         const status = String(occupiedSeats[key] || 'AVAILABLE').toUpperCase();
@@ -427,8 +432,9 @@ function applyOccupiedSeats(occupiedSeats) {
             button.disabled = false;
         }
 
-        button.classList.toggle('selected', wasSelected && status === 'AVAILABLE');
-        if (wasSelected && status !== 'AVAILABLE') removedSeats.push(key);
+        button.classList.toggle('selected',
+            (wasSelected && status === 'AVAILABLE') || ownHeldSeats.has(key));
+        if (wasSelected && status !== 'AVAILABLE' && !ownHeldSeats.has(key)) removedSeats.push(key);
     });
 
     if (removedSeats.length) {
@@ -550,6 +556,7 @@ async function bookSelectedSeats() {
         return;
     }
 
+    pendingHoldSeats = new Set(selectedSeats);
     try {
         const bookingRequest = {
             showId: selectedShow.showId,
@@ -563,8 +570,10 @@ async function bookSelectedSeats() {
             method: 'POST',
             body: JSON.stringify(bookingRequest)
         });
+        pendingHoldSeats.clear();
         storeBookingChallenge(challenge);
     } catch (error) {
+        pendingHoldSeats.clear();
         showNotice(error.message, true);
     }
 }

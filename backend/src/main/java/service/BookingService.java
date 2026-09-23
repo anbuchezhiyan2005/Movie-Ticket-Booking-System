@@ -24,7 +24,6 @@ import model.Theatre;
 import model.User;
 import repository.BookingRepository;
 import repository.BookingGateTokenRepository;
-import repository.MovieRepository;
 import repository.OtpChallengeRepository;
 import repository.ScreenRepository;
 import repository.ShowRepository;
@@ -58,13 +57,11 @@ public class BookingService {
     private static final int PENDING_MINUTES = 5;
     private static final int RECENT_BOOKINGS_LIMIT = 10;
     private static final int FULL_REFUND_MINUTES_BEFORE_START = 30;
-    private static final long PAYMENT_DELAY_MILLIS = Long.getLong("booking.payment.delay.ms", 2_000L);
     private final ConcurrentHashMap<String, Object> activeBookingLocks = new ConcurrentHashMap<>();
 
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final ShowRepository showRepository;
-    private final MovieRepository movieRepository;
     private final ScreenRepository screenRepository;
     private final TheatreRepository theatreRepository;
     private final ShowSeatRepository showSeatRepository;
@@ -84,7 +81,6 @@ public class BookingService {
             BookingRepository bookingRepository,
             UserRepository userRepository,
             ShowRepository showRepository,
-            MovieRepository movieRepository,
             ScreenRepository screenRepository,
             TheatreRepository theatreRepository,
             ShowSeatRepository showSeatRepository,
@@ -97,7 +93,6 @@ public class BookingService {
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.showRepository = showRepository;
-        this.movieRepository = movieRepository;
         this.screenRepository = screenRepository;
         this.theatreRepository = theatreRepository;
         this.showSeatRepository = showSeatRepository;
@@ -113,14 +108,13 @@ public class BookingService {
             BookingRepository bookingRepository,
             UserRepository userRepository,
             ShowRepository showRepository,
-            MovieRepository movieRepository,
             ScreenRepository screenRepository,
             TheatreRepository theatreRepository,
             ShowSeatRepository showSeatRepository,
             PaymentService paymentService,
             SeatAvailabilityCache seatAvailabilityCache,
             ConfirmationEmailService confirmationEmailService) {
-        this(bookingRepository, userRepository, showRepository, movieRepository, screenRepository,
+        this(bookingRepository, userRepository, showRepository, screenRepository,
             theatreRepository, showSeatRepository, new OtpChallengeRepository(), paymentService,
             seatAvailabilityCache,
             confirmationEmailService, new GateTokenService(new BookingGateTokenRepository()),
@@ -135,48 +129,14 @@ public class BookingService {
     // Booking creation and confirmation
     // -------------------------------------------------------------------------
 
-    public BookingResponse bookTickets(Long customerId, BookingRequest request) throws SQLException {
-        validateBookingRequest(request);
-        List<String> lockKeys = bookingLockKeys(request);
-        Map<String, Object> acquiredLocks = new LinkedHashMap<>();
-
-        try {
-            for (String lockKey : lockKeys) {
-                Object lockToken = new Object();
-                if (activeBookingLocks.putIfAbsent(lockKey, lockToken) != null) {
-                        LOGGER.warning("event=booking.seat_conflict requestId=" + util.RequestLogContext.requestId()
-                            + " userId=" + customerId + " showId=" + request.getShowId()
-                            + " phase=locking");
-                    throw new ConflictException("One of the selected seats is currently being booked");
-                    
-                }
-                acquiredLocks.put(lockKey, lockToken);
-            }
-            BookingResult result = Database.inTransactionWithDeadlockRetry(
-                    () -> bookTicketsInternal(customerId, request));
-            updateCache(result.response(), "BOOKED");
-                LOGGER.info("event=booking.confirmed requestId=" + util.RequestLogContext.requestId()
-                    + " userId=" + customerId + " bookingId=" + result.response().getBookingId());
-            try {
-                confirmationEmailService.queueConfirmation(result.confirmationEmail());
-            } catch (RuntimeException error) {
-                LOGGER.log(Level.SEVERE, "event=system.error requestId=" + util.RequestLogContext.requestId()
-                    + " location=booking.confirmation_email_queue bookingId="
-                    + result.response().getBookingId(), error);
-            }
-            return result.response();
-        } finally {
-            acquiredLocks.forEach((lockKey, lockToken) -> activeBookingLocks.remove(lockKey, lockToken));
-        }
-    }
-
     /**
      * Creates a temporary seat hold. The booking remains awaiting OTP
      * verification until {@link #confirmHeldBookingWithOtp} succeeds.
      */
     public BookingResponse holdTickets(Long customerId, BookingRequest request) throws SQLException {
         validateBookingRequest(request);
-        List<String> lockKeys = bookingLockKeys(request);
+        List<SeatRequest> seats = orderedSeats(request);
+        List<String> lockKeys = bookingLockKeys(request.getShowId(), seats);
         Map<String, Object> acquiredLocks = new LinkedHashMap<>();
         try {
             for (String lockKey : lockKeys) {
@@ -191,7 +151,7 @@ public class BookingService {
                 acquiredLocks.put(lockKey, lockToken);
             }
             BookingResponse response = Database.inTransactionWithDeadlockRetry(
-                    () -> holdTicketsInternal(customerId, request));
+                    () -> holdTicketsInternal(customerId, request, seats));
             updateCache(response, "HELD");
                 LOGGER.info("event=booking.hold.created requestId=" + util.RequestLogContext.requestId()
                     + " userId=" + customerId + " bookingId=" + response.getBookingId());
@@ -249,9 +209,9 @@ public class BookingService {
         removeFromCache(seats);
     }
 
-    private List<String> bookingLockKeys(BookingRequest request) {
-        return orderedSeats(request).stream()
-            .map(seat -> request.getShowId() + ":"
+    private List<String> bookingLockKeys(Long showId, List<SeatRequest> seats) {
+        return seats.stream()
+            .map(seat -> showId + ":"
                 + seat.getRowLabel() + "-" + seat.getSeatNumber())
             .distinct()
             .toList();
@@ -297,15 +257,18 @@ public class BookingService {
             return bookings;
     }
 
+    // OPTIMIZED 6 -> 3 QUERIES
     public BookingResponse getBooking(Long bookingId, Long customerId) {
         Booking booking = getBookingEntity(bookingId);
         if (!booking.getUserId().equals(customerId)) {
             throw new ForbiddenException("You are not allowed to access this booking");
         }
-        Show show = getShow(booking.getShowId());
-        Movie movie = getMovie(show.getMovieId());
-        Screen screen = getScreen(show.getScreenId());
-        Theatre theatre = getTheatre(screen.getTheatreId());
+        ShowRepository.ShowWithDetails details = showRepository.findWithDetails(booking.getShowId())
+                .orElseThrow(() -> new NotFoundException("Show not found"));
+        Show show = details.show();
+        Movie movie = details.movie();
+        Screen screen = details.screen();
+        Theatre theatre = details.theatre();
         BookingResponse response = bookingResponseBuilder(new BookingResponseData(
             booking,
             movie.getMovieName(),
@@ -320,13 +283,6 @@ public class BookingService {
             LOGGER.info("event=booking.viewed requestId=" + util.RequestLogContext.requestId()
                 + " bookingId=" + bookingId + " userId=" + customerId);
             return response;
-    }
-
-    public void cancelBooking(Long bookingId, Long customerId) throws SQLException {
-        List<ShowSeat> seats = Database.inTransaction(() -> cancelInternal(bookingId, customerId));
-        removeFromCache(seats);
-        LOGGER.info("event=booking.cancelled requestId=" + util.RequestLogContext.requestId()
-            + " bookingId=" + bookingId + " userId=" + customerId);
     }
 
     public void cancelBookingWithOtp(Long bookingId, Long customerId,
@@ -410,126 +366,26 @@ public class BookingService {
     // Internal booking workflow steps
     // -------------------------------------------------------------------------
 
-    /** Performs the database portion of an immediate booking confirmation. */
-    private BookingResult bookTicketsInternal(Long customerId, BookingRequest request) {
-        validateBookingRequest(request);
-
-        User customer = getUser(customerId);
-        if (customer.getRole() != Role.CUSTOMER) {
-            throw new ForbiddenException("Only customers can create bookings");
-        }
-
-        Show show = getShow(request.getShowId());
-        if (!show.getShowTiming().isAfter(LocalDateTime.now())) {
-            throw new ValidationException("Cannot book a show that has already started");
-        }
-
-        Screen screen = getScreen(show.getScreenId());
-        Movie movie = getMovie(show.getMovieId());
-        List<SeatRequest> seats = orderedSeats(request);
-        validateSeats(seats, screen);
-        validateDuplicateSeats(seats);
-
-        Theatre theatre = getTheatre(screen.getTheatreId());
-        Long adminId = theatre.getAdminId();
-        final int totalAmount;
-        try {
-            totalAmount = Math.multiplyExact(movie.getTicketPrice(), seats.size());
-        } catch (ArithmeticException e) {
-            throw new ValidationException("Booking total is too large");
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        Booking booking = new Booking();
-        booking.setUserId(customerId);
-        booking.setShowId(show.getShowId());
-        booking.setStatus(BookingStatus.PENDING);
-        booking.setTotalAmount(totalAmount);
-        booking.setBookingTime(now);
-        booking.setExpiresAt(now.plusMinutes(PENDING_MINUTES));
-        booking = bookingRepository.save(booking);
-
-        // Claim each requested seat inside the booking transaction. The database
-        // uniqueness constraint remains the final concurrency guarantee.
-        for (SeatRequest seat : seats) {
-            ShowSeat showSeat = new ShowSeat();
-            showSeat.setShowId(show.getShowId());
-            showSeat.setRowLabel(seat.getRowLabel().trim().toUpperCase());
-            showSeat.setSeatNumber(seat.getSeatNumber());
-            showSeat.setBookingId(booking.getBookingId());
-
-            boolean claimed = showSeatRepository.claimSeat(showSeat);
-            if (!claimed) {
-                throw new ConflictException(
-                        "Seat " + seat.getRowLabel() + seat.getSeatNumber() + " is no longer available");
-            }
-        }
-
-        // Payment is part of the same transaction so a failure rolls back the
-        // booking and all seat claims.
-        try {
-            if (PAYMENT_DELAY_MILLIS > 0) {
-                Thread.sleep(PAYMENT_DELAY_MILLIS);
-            }
-            paymentService.processPayment(customerId, adminId, totalAmount);
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Booking payment was interrupted", error);
-        } catch (RuntimeException error) {
-            throw error;
-        }
-
-        booking.setStatus(BookingStatus.CONFIRMED);
-        booking.setExpiresAt(null);
-        bookingRepository.update(booking);
-
-        LocalDateTime showEnd = show.getShowTiming().plusMinutes(movie.getDurationInMinutes());
-        String gateUrl = gateTokenService.issue(booking.getBookingId(), showEnd);
-
-        BookingResponse response = bookingResponseBuilder(new BookingResponseData(
-            booking,
-            movie.getMovieName(),
-            show.getShowTiming(),
-            movie.getDurationInMinutes(),
-            screen.getScreenName(),
-            theatre.getTheatreName(),
-            theatre.getTheatreLocation(),
-            seats.stream().map(this::toSeatResponse).collect(Collectors.toList())));
-        ConfirmationEmail confirmationEmail = new ConfirmationEmail(
-            customer.getEmail(),
-            customer.getName(),
-            booking.getBookingId(),
-            movie.getMovieName(),
-            theatre.getTheatreName(),
-            theatre.getTheatreLocation(),
-            show.getShowTiming(),
-            seats.stream()
-                .map(seat -> seat.getRowLabel() + "-" + seat.getSeatNumber())
-                .toList(),
-            booking.getTotalAmount(),
-            gateUrl);
-        return new BookingResult(response, confirmationEmail);
-    }
-
     /** Performs the database portion of creating a temporary OTP hold. */
-    private BookingResponse holdTicketsInternal(Long customerId, BookingRequest request) {
+    private BookingResponse holdTicketsInternal(Long customerId, BookingRequest request,
+                                                List<SeatRequest> seats) {
         User customer = getUser(customerId);
         if (customer.getRole() != Role.CUSTOMER) {
             // QUESTION: Do we need to have a log statement here??
             throw new ForbiddenException("Only customers can create bookings");
         }
         // QUESTION: Are all these DB fetches a single read each?? Can we join them all to retrieve them in one query??
-        Show show = getShow(request.getShowId());
+        ShowRepository.ShowWithDetails details = showRepository.findWithDetails(request.getShowId())
+                .orElseThrow(() -> new NotFoundException("Show not found"));
+        Show show = details.show();
         if (!show.getShowTiming().isAfter(LocalDateTime.now())) {
             // QUESTION: Do we need to have a log statement here??
             throw new ValidationException("Cannot book a show that has already started");
         }
-        Screen screen = getScreen(show.getScreenId());
-        Movie movie = getMovie(show.getMovieId());
-        Theatre theatre = getTheatre(screen.getTheatreId());
-        List<SeatRequest> seats = orderedSeats(request);
+        Screen screen = details.screen();
+        Movie movie = details.movie();
+        Theatre theatre = details.theatre();
         validateSeats(seats, screen);
-        validateDuplicateSeats(seats);
 
         int totalAmount;
         try {
@@ -585,12 +441,14 @@ public class BookingService {
             throw new ValidationException("Booking hold has expired");
         }
 
-        // REDUCE ALL THESE INDIVIDUAL QUERIES 
+        // OPTIMIZED READS 
         User customer = getUser(customerId);
-        Show show = getShow(booking.getShowId());
-        Movie movie = getMovie(show.getMovieId());
-        Screen screen = getScreen(show.getScreenId());
-        Theatre theatre = getTheatre(screen.getTheatreId());
+        ShowRepository.ShowWithDetails details = showRepository.findWithDetails(booking.getShowId())
+                .orElseThrow(() -> new NotFoundException("Show not found"));
+        Show show = details.show();
+        Movie movie = details.movie();
+        Screen screen = details.screen();
+        Theatre theatre = details.theatre();
         List<ShowSeat> seats = showSeatRepository.findByBookingId(bookingId);
         try {
             paymentService.processPayment(customerId, theatre.getAdminId(), booking.getTotalAmount());
@@ -697,8 +555,15 @@ public class BookingService {
         }
     }
 
+
+    /**
+     * This helper method validates the seat requests against the screen layout and checks for duplicates.
+     * @param seats
+     * @param screen
+     */
     private void validateSeats(List<SeatRequest> seats, Screen screen) {
         List<String> validRows = ShowTimes.generateRows(screen.getRowRange());
+        Set<String> selected = new HashSet<>();
         for (SeatRequest seat : seats) {
             if (seat.getRowLabel() == null || !validRows.contains(seat.getRowLabel().trim().toUpperCase())) {
                 throw new ValidationException("Invalid row: " + seat.getRowLabel());
@@ -707,20 +572,12 @@ public class BookingService {
             if (seat.getSeatNumber() <= 0 || seat.getSeatNumber() > screen.getSeatsPerRow()) {
                 throw new ValidationException("Invalid seat number: " + seat.getSeatNumber());
             }
-        }
-    }
-
-    private void validateDuplicateSeats(List<SeatRequest> seats) {
-        Set<String> selected = new HashSet<>();
-        for (SeatRequest seat : seats) {
             String key = seat.getRowLabel() + "-" + seat.getSeatNumber();
             if (!selected.add(key)) {
                 throw new ValidationException("Duplicate seat selected: " + key);
             }
         }
     }
-
-    // REMOVE ALL THESE WRAPPERS AND USE THEM AS SUCH
 
     private User getUser(Long userId) {
         return userRepository.findById(userId)
@@ -735,11 +592,6 @@ public class BookingService {
     private Screen getScreen(Long screenId) {
         return screenRepository.findById(screenId)
                 .orElseThrow(() -> new NotFoundException("Screen not found"));
-    }
-
-    private Movie getMovie(Long movieId) {
-        return movieRepository.findById(movieId)
-                .orElseThrow(() -> new NotFoundException("Movie not found"));
     }
 
     private Theatre getTheatre(Long theatreId) {
@@ -778,6 +630,7 @@ public class BookingService {
         }
     }
 
+    // MERGE INTO SeatAvailabilityCache.java
     private void removeFromCache(List<ShowSeat> seats) {
         for (ShowSeat seat : seats) {
             seatAvailabilityCache.removeSeat(seat.getShowId(),

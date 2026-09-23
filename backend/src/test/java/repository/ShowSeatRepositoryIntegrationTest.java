@@ -4,13 +4,16 @@ import config.Database;
 import dto.request.BookingRequest;
 import dto.request.SeatRequest;
 import enums.BookingStatus;
+import enums.OtpPurpose;
 import exception.ConflictException;
 import exception.ValidationException;
 import model.ShowSeat;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import repository.OtpChallengeRepository;
 import service.BookingService;
+import service.OtpService;
 import service.PaymentService;
 
 import java.sql.Connection;
@@ -32,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShowSeatRepositoryIntegrationTest {
@@ -132,7 +136,7 @@ class ShowSeatRepositoryIntegrationTest {
             startTogether.await(10, TimeUnit.SECONDS);
             long startedAt = System.nanoTime();
             try {
-                Long createdBookingId = bookingService.bookTickets(customerId, request).getBookingId();
+                Long createdBookingId = bookingService.holdTickets(customerId, request).getBookingId();
                 winningBookingId.set(createdBookingId);
                 return true;
             } catch (ConflictException expected) {
@@ -156,11 +160,12 @@ class ShowSeatRepositoryIntegrationTest {
             assertEquals(1, countClaimedSeatsForRow("B", 5));
             assertNotNull(winningBookingId.get());
             assertTrue(durations.stream().anyMatch(duration -> duration < 5000),
-                    "The rejected request should fail before payment delay completes");
+                    "The rejected request should fail before a paid booking completes");
         } finally {
             executor.shutdownNow();
             if (winningBookingId.get() != null) {
-                bookingService.cancelBooking(winningBookingId.get(), customerId);
+                // A hold (AWAITING_OTP) is released with expireBookingHold, not a cancellation.
+                bookingService.expireBookingHold(winningBookingId.get(), customerId);
             }
         }
 
@@ -168,38 +173,6 @@ class ShowSeatRepositoryIntegrationTest {
     }
 
         @Test
-        void insufficientBalanceRollsBackBookingAndSeatClaim() throws Exception {
-            setWalletBalance(customerId, 0);
-
-        BookingRequest request = new BookingRequest();
-        request.setShowId(showId);
-        SeatRequest requestedSeat = new SeatRequest();
-        requestedSeat.setRowLabel("B");
-        requestedSeat.setSeatNumber(1);
-        request.setSeats(List.of(requestedSeat));
-
-        BookingService bookingService = new BookingService(
-            new BookingRepository(),
-            new UserRepository(),
-            new ShowRepository(),
-            new MovieRepository(),
-            new ScreenRepository(),
-            new TheatreRepository(),
-            new ShowSeatRepository(),
-            new PaymentService(new UserRepository()),
-            new cache.SeatAvailabilityCache(),
-            confirmation -> {
-            });
-
-        org.junit.jupiter.api.Assertions.assertThrows(
-            ValidationException.class,
-            () -> bookingService.bookTickets(customerId, request));
-
-        assertEquals(0, countBookingsForCustomer());
-        assertEquals(0, countClaimedSeatsForRow("B", 1));
-        }
-
-    @Test
     void expiredPendingBookingReleasesItsClaimedSeat() throws Exception {
         Long expiredBookingId = insertExpiredBooking();
         ShowSeatRepository seatRepository = new ShowSeatRepository();
@@ -245,7 +218,10 @@ class ShowSeatRepositoryIntegrationTest {
         ShowSeatRepository seatRepository = new ShowSeatRepository();
         seatRepository.claimSeat(seat("B", 3, cancellableBookingId));
 
-        createBookingService().cancelBooking(cancellableBookingId, customerId);
+        OtpService.Challenge challenge = new OtpService(new OtpChallengeRepository())
+                .create(customerId, cancellableBookingId, OtpPurpose.CANCELLATION);
+        createBookingService().cancelBookingWithOtp(
+                cancellableBookingId, customerId, challenge.token(), challenge.code());
 
         assertEquals(BookingStatus.CANCELLED, new BookingRepository()
                 .findById(cancellableBookingId)
@@ -265,10 +241,14 @@ class ShowSeatRepositoryIntegrationTest {
         startedSeat.setShowId(startedShowId);
         seatRepository.claimSeat(startedSeat);
 
+        OtpService.Challenge challenge = new OtpService(new OtpChallengeRepository())
+                .create(customerId, startedBookingId, OtpPurpose.CANCELLATION);
+
         try {
-            org.junit.jupiter.api.Assertions.assertThrows(
+            assertThrows(
                     ValidationException.class,
-                    () -> createBookingService().cancelBooking(startedBookingId, customerId));
+                    () -> createBookingService().cancelBookingWithOtp(
+                            startedBookingId, customerId, challenge.token(), challenge.code()));
             assertEquals(BookingStatus.CONFIRMED, new BookingRepository()
                     .findById(startedBookingId)
                     .orElseThrow()
@@ -292,12 +272,19 @@ class ShowSeatRepositoryIntegrationTest {
         request.setSeats(List.of(requestedSeat));
 
         BookingService bookingService = createBookingService();
-        Long createdBookingId = bookingService.bookTickets(customerId, request).getBookingId();
+        Long createdBookingId = bookingService.holdTickets(customerId, request).getBookingId();
+        OtpService.Challenge bookingChallenge = new OtpService(new OtpChallengeRepository())
+                .create(customerId, createdBookingId, OtpPurpose.BOOKING);
+        bookingService.confirmHeldBookingWithOtp(
+                createdBookingId, customerId, bookingChallenge.token(), bookingChallenge.code());
         assertEquals(900, walletBalance(customerId));
         assertEquals(100, walletBalance(adminId));
 
         try {
-            bookingService.cancelBooking(createdBookingId, customerId);
+            OtpService.Challenge cancelChallenge = new OtpService(new OtpChallengeRepository())
+                    .create(customerId, createdBookingId, OtpPurpose.CANCELLATION);
+            bookingService.cancelBookingWithOtp(
+                    createdBookingId, customerId, cancelChallenge.token(), cancelChallenge.code());
             assertEquals(975, walletBalance(customerId));
             assertEquals(25, walletBalance(adminId));
             assertEquals(BookingStatus.CANCELLED, new BookingRepository()
@@ -383,7 +370,6 @@ class ShowSeatRepositoryIntegrationTest {
                 new BookingRepository(),
                 new UserRepository(),
                 new ShowRepository(),
-                new MovieRepository(),
                 new ScreenRepository(),
                 new TheatreRepository(),
                 new ShowSeatRepository(),
@@ -397,19 +383,6 @@ class ShowSeatRepositoryIntegrationTest {
         try (Connection connection = Database.openConnection();
              PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM show_seats WHERE show_id = ?")) {
             statement.setLong(1, showId);
-            try (ResultSet result = statement.executeQuery()) {
-                result.next();
-                return result.getInt(1);
-            }
-        }
-    }
-
-    private static int countBookingsForCustomer() throws SQLException {
-        try (Connection connection = Database.openConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT COUNT(*) FROM bookings WHERE user_id = ? AND show_id = ?")) {
-            statement.setLong(1, customerId);
-            statement.setLong(2, showId);
             try (ResultSet result = statement.executeQuery()) {
                 result.next();
                 return result.getInt(1);
